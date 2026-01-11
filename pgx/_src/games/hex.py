@@ -19,7 +19,6 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-
 FALSE = jnp.bool_(False)
 TRUE = jnp.bool_(True)
 
@@ -97,7 +96,7 @@ def _step(state: GameState, action: Array, size: int) -> GameState:
         )
 
     board = jax.lax.fori_loop(0, 6, merge, board)
-    
+
     state = state._replace(
         step_count=state.step_count + 1,
         board=board * -1,

@@ -30,6 +30,8 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
         "othello_v0",
     ):
         return _make_az_baseline_model(model_id, download_dir)
+    elif model_id == "domineering_v0":
+        return _make_random_baseline_model()
     elif model_id in (
         "minatar-asterix_v0",
         "minatar-breakout_v0",
@@ -46,6 +48,7 @@ def _make_az_baseline_model(model_id: BaselineModelId, download_dir: str = "base
     import haiku as hk
 
     model_args, model_params, model_state = _load_baseline_model(model_id, download_dir)
+    print("!!>!>!>!>!> model_args=%s" % model_args)
 
     def forward_fn(x, is_eval=False):
         net = _create_az_model_v0(**model_args)
@@ -60,6 +63,32 @@ def _make_az_baseline_model(model_id: BaselineModelId, download_dir: str = "base
 
     return apply
 
+def _make_random_baseline_model():
+    import haiku as hk
+
+    model_args = {
+        "num_actions": 64,
+        "num_channels": 128,
+        "num_layers": 6,
+        "resnet_v2": True,
+    }
+
+    def forward_fn(x, is_eval=False):
+        net = _create_az_model_v0(**model_args)
+        policy_out, value_out = net(x, is_training=not is_eval, test_local_stats=False)
+        return policy_out, value_out
+
+    forward = hk.without_apply_rng(hk.transform_with_state(forward_fn))
+
+    key = jax.random.PRNGKey(0)
+    dummy_obs = jnp.zeros((8, 8, 8), dtype=jnp.float32)
+    params, state = forward.init(key, dummy_obs, is_eval=False)
+
+    def apply(obs):
+        (logits, value), _ = forward.apply(params, state, obs, is_eval=True)
+        return logits, value
+
+    return apply
 
 def _make_minatar_baseline_model(model_id: BaselineModelId, download_dir: str = "baselines"):
     import haiku as hk

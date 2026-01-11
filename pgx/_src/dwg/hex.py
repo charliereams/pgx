@@ -1,5 +1,5 @@
-from copy import deepcopy
 import math
+from copy import deepcopy
 
 import jax.numpy as jnp
 

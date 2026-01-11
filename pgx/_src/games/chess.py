@@ -84,7 +84,7 @@ INIT_LEGAL_ACTION_MASK[ixs] = True
 
 LEGAL_DEST = -np.ones((7, 64, 27), np.int32)  # LEGAL_DEST[0, :, :] == -1
 LEGAL_DEST_NEAR = -np.ones((64, 16), np.int32)  # king and knight moves
-LEGAL_DEST_FAR = -np.ones((64, 19), np.int32)   # queen moves except king moves
+LEGAL_DEST_FAR = -np.ones((64, 19), np.int32)  # queen moves except king moves
 CAN_MOVE = np.zeros((7, 64, 64), dtype=np.bool_)
 for from_ in range(64):
     legal_dest = {p: [] for p in range(7)}
@@ -126,7 +126,17 @@ for from_ in range(64):
             BETWEEN[from_, to, i] = c * 8 + r
 
 FROM_PLANE, TO_PLANE, INIT_LEGAL_ACTION_MASK, LEGAL_DEST, LEGAL_DEST_NEAR, LEGAL_DEST_FAR, CAN_MOVE, BETWEEN = (
-    jnp.array(x) for x in (FROM_PLANE, TO_PLANE, INIT_LEGAL_ACTION_MASK, LEGAL_DEST, LEGAL_DEST_NEAR, LEGAL_DEST_FAR, CAN_MOVE, BETWEEN)
+    jnp.array(x)
+    for x in (
+        FROM_PLANE,
+        TO_PLANE,
+        INIT_LEGAL_ACTION_MASK,
+        LEGAL_DEST,
+        LEGAL_DEST_NEAR,
+        LEGAL_DEST_FAR,
+        CAN_MOVE,
+        BETWEEN,
+    )
 )
 
 keys = jax.random.split(jax.random.PRNGKey(12345), 4)
