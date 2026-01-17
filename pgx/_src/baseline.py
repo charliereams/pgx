@@ -25,7 +25,6 @@ BaselineModelId = Literal[
 def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baselines"):
     if model_id in (
         "animal_shogi_v0",
-        # "domineering_v0",
         "gardner_chess_v0",
         "go_9x9_v0",
         "hex_v0",
@@ -33,7 +32,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
     ):
         return _make_az_baseline_model(model_id, download_dir)
     elif model_id == "domineering_v0":
-        return _make_random_baseline_model()
+        return _make_default_baseline_model()
     elif model_id in (
         "minatar-asterix_v0",
         "minatar-breakout_v0",
@@ -50,7 +49,6 @@ def _make_az_baseline_model(model_id: BaselineModelId, download_dir: str = "base
     import haiku as hk
 
     model_args, model_params, model_state = _load_baseline_model(model_id, download_dir)
-    print("!!>!>!>!>!> model_args=%s" % model_args)
 
     def forward_fn(x, is_eval=False):
         net = _create_az_model_v0(**model_args)
@@ -65,7 +63,7 @@ def _make_az_baseline_model(model_id: BaselineModelId, download_dir: str = "base
 
     return apply
 
-def _make_random_baseline_model():
+def _make_default_baseline_model():
     import haiku as hk
 
     model_args = {
@@ -163,7 +161,6 @@ def _load_baseline_model(baseline_model: BaselineModelId, basedir: str = "baseli
 def _get_download_url(baseline_model: BaselineModelId) -> str:
     urls = {
         "animal_shogi_v0": "https://drive.google.com/uc?id=1HpP5GLf9b6zkJL8FKUFfKS8Zycs-gzZg",
-        "domineering_v0": "https://www.apterous.org/000120.ckpt",
         "gardner_chess_v0": "https://drive.google.com/uc?id=1RUdrxhYseG-FliskVdemNYYM5YYmfwU7",
         "go_9x9_v0": "https://drive.google.com/uc?id=1hXMicBALW3WU43NquDoX4zthY4-KjiVu",
         "hex_v0": "https://drive.google.com/uc?id=11qpLAT4_0NgPrKRcJCPE7RdN92VP8Ws3",
