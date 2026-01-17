@@ -9,6 +9,7 @@ from pgx._src.utils import _download
 
 BaselineModelId = Literal[
     "animal_shogi_v0",
+    "domineering_v0",
     "gardner_chess_v0",
     "go_9x9_v0",
     "hex_v0",
@@ -24,6 +25,7 @@ BaselineModelId = Literal[
 def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baselines"):
     if model_id in (
         "animal_shogi_v0",
+        # "domineering_v0",
         "gardner_chess_v0",
         "go_9x9_v0",
         "hex_v0",
@@ -68,7 +70,7 @@ def _make_random_baseline_model():
 
     model_args = {
         "num_actions": 64,
-        "num_channels": 128,
+        "num_channels": 256,
         "num_layers": 6,
         "resnet_v2": True,
     }
@@ -161,6 +163,7 @@ def _load_baseline_model(baseline_model: BaselineModelId, basedir: str = "baseli
 def _get_download_url(baseline_model: BaselineModelId) -> str:
     urls = {
         "animal_shogi_v0": "https://drive.google.com/uc?id=1HpP5GLf9b6zkJL8FKUFfKS8Zycs-gzZg",
+        "domineering_v0": "https://www.apterous.org/000120.ckpt",
         "gardner_chess_v0": "https://drive.google.com/uc?id=1RUdrxhYseG-FliskVdemNYYM5YYmfwU7",
         "go_9x9_v0": "https://drive.google.com/uc?id=1hXMicBALW3WU43NquDoX4zthY4-KjiVu",
         "hex_v0": "https://drive.google.com/uc?id=11qpLAT4_0NgPrKRcJCPE7RdN92VP8Ws3",
