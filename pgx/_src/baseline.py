@@ -72,6 +72,7 @@ def _make_default_baseline_model():
         "num_layers": 6,
         "resnet_v2": True,
     }
+    print (f"Loading default baseline {model_args}")
 
     def forward_fn(x, is_eval=False):
         net = _create_az_model_v0(**model_args)

@@ -57,8 +57,8 @@ class Game:
 
         def can_play(move_mask):
             # return jnp.array([new_board[move[0]] & new_board[move[1]]])
-            # return new_board[move_mask].all(axis=0)
-            return (new_board & move_mask).sum(axis=0) == 2
+            return new_board[move_mask].all(axis=0)
+            #return (new_board & move_mask).sum(axis=0) == 2
 
         # Game is over if the player next to play has no legal moves.
         has_next_move = jax.vmap(can_play)(jax.lax.select(state.color == 0, MASK_CACHE_V, MASK_CACHE_H)).any()
@@ -97,8 +97,8 @@ def _make_mask_cache_horizontal():
     move_masks = []
     for x in range(7):
         for y in range(8):
-            move_masks.append(jnp.zeros(64, jnp.bool_).at[jnp.array([y * 8 + x, y * 8 + x + 1])].set(True))
-            # move_masks.append(jnp.array([y * 8 + x, y * 8 + x + 1]))
+            # move_masks.append(jnp.zeros(64, jnp.bool_).at[jnp.array([y * 8 + x, y * 8 + x + 1])].set(True))
+            move_masks.append(jnp.array([y * 8 + x, y * 8 + x + 1]))
     return jnp.array(move_masks)
 
 
@@ -106,8 +106,8 @@ def _make_mask_cache_vertical():
     move_masks = []
     for x in range(8):
         for y in range(7):
-            move_masks.append(jnp.zeros(64, jnp.bool_).at[jnp.array([y * 8 + x, y * 8 + x + 8])].set(True))
-            # move_masks.append(jnp.array([y * 8 + x, y * 8 + x + 8]))
+            # move_masks.append(jnp.zeros(64, jnp.bool_).at[jnp.array([y * 8 + x, y * 8 + x + 8])].set(True))
+            move_masks.append(jnp.array([y * 8 + x, y * 8 + x + 8]))
     return jnp.array(move_masks)
 
 
