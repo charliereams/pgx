@@ -38,7 +38,7 @@ num_devices = len(devices)
 
 class MctsConfig(NamedTuple):
     seed: int = 7386708
-    num_simulations: int = 100
+    num_simulations: int = 1000
     batch_size: int = 1
 
 
@@ -94,7 +94,7 @@ def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.St
     (logits, value), _ = forward.apply(model_params, model_state, state.observation, is_eval=True)
     # Mask first, then scale for numerical stability.
     logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
-    logits = logits - jnp.max(logits, axis=-1, keepdims=True)
+    #logits = logits - jnp.max(logits, axis=-1, keepdims=True)
 
     reward = state.rewards[jnp.arange(state.rewards.shape[0]), current_player]
     value = jnp.where(state.terminated, 0.0, value)
@@ -121,7 +121,7 @@ def action_from_square(square_code):
         return None
 
 
-def run_mcts(model, key, state, debug=False):
+def run_mcts(move_num, model, key, state, debug=False):
     key, subkey = jax.random.split(key)
     keys = jax.random.split(subkey, mcts_config.batch_size)
     key, subkey = jax.random.split(key)
@@ -153,9 +153,9 @@ def run_mcts(model, key, state, debug=False):
         root=root,
         invalid_actions=~state.legal_action_mask,
         recurrent_fn=recurrent_fn,
-        num_simulations=mcts_config.num_simulations,
-        max_depth=32,
-        #qtransform=mctx.qtransform_completed_by_mix_value,
+        num_simulations=round(mcts_config.num_simulations * 1.075**min(20, move_num)),
+        #max_depth=32,
+        qtransform=mctx.qtransform_completed_by_mix_value,
         gumbel_scale=0.0,
     )
     return policy_output
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     #with open("checkpoints/domineering_20260112173305/000000.ckpt", "rb") as f:
     #  ckpt = pickle.load(f)
     #  model2 = ckpt["model"]
-    with open("checkpoints/domineering_20260118213906/000150.ckpt", "rb") as f:
+    with open("checkpoints/domineering_20260118213906/000400.ckpt", "rb") as f:
       ckpt = pickle.load(f)
       model1 = ckpt["model"]
 
@@ -185,6 +185,7 @@ if __name__ == "__main__":
         state: pgx.State = init_fn(keys)
 
         is_human_turn = is_human_first
+        move_num = 0
         while True:
             print ("   abcdefgh")
             print ("\n".join(
@@ -215,8 +216,8 @@ if __name__ == "__main__":
                 #policy_output = jax.jit(run_mcts)(model1, key, state)
                 #action = policy_output.action
             else:
-                run_mcts(model1, key, state, debug=True)
-                policy_output = jax.jit(run_mcts)(model1, key, state)
+                run_mcts(move_num, model1, key, state, debug=True)
+                policy_output = jax.jit(partial(run_mcts, move_num))(model1, key, state)
                 action_weights = policy_output.action_weights.reshape(8, 8)
                 print("\n".join(
                   "".join(f"{100*w:6.2f}%  " for w in w_row)
@@ -227,6 +228,7 @@ if __name__ == "__main__":
             print(f"Played {'abcdefgh'[action[0] % 8]}{1 + (action[0] // 8)}\n")
             state = step_fn(state, action)
             is_human_turn = not is_human_turn
+            move_num += 1
 
         print("Human wins!" if (state._x.winner == 0) == is_human_first else "AI wins!")
         return state._x.winner == 0
