@@ -173,6 +173,24 @@ def test_observe():
         )
     ).all()
 
+    state = step(state, 55)
+    obs = observe(state)
+    assert (
+        obs
+        == jnp.bool_(
+            [
+                [True, True, True, True, True, True, True, True],
+                [False, True, True, True, True, True, True, True],
+                [False, True, True, True, True, True, True, True],
+                [True, True, True, True, True, True, True, True],
+                [True, True, True, True, True, True, True, True],
+                [True, True, True, True, True, True, True, True],
+                [True, True, True, True, True, True, True, True],
+                [True, True, True, True, True, True, False, False],
+            ]
+        )
+    ).all()
+
 
 def test_api():
     import pgx

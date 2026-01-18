@@ -38,7 +38,7 @@ num_devices = len(devices)
 
 class MctsConfig(NamedTuple):
     seed: int = 7386708
-    num_simulations: int = 1000
+    num_simulations: int = 100
     batch_size: int = 1
 
 
@@ -47,7 +47,7 @@ class Config(BaseModel):
     seed: int = 0
     max_num_iters: int = 400
     # network params
-    num_channels: int = 256
+    num_channels: int = 128
     num_layers: int = 8
     resnet_v2: bool = True
     # selfplay params
@@ -71,14 +71,14 @@ print(config)
 env = pgx.make(config.env_id)
 
 
-def forward_fn(x):
+def forward_fn(x, is_eval=False):
     net = AZNet(
         num_actions=env.num_actions,
         num_channels=config.num_channels,
         num_blocks=config.num_layers,
         resnet_v2=config.resnet_v2,
     )
-    policy_out, value_out = net(x, is_training=False, test_local_stats=False)
+    policy_out, value_out = net(x, is_training=not is_eval, test_local_stats=False)
     return policy_out, value_out
 
 
@@ -91,10 +91,10 @@ def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.St
     current_player = state.current_player
     state = jax.vmap(env.step)(state, action)
 
-    (logits, value), _ = forward.apply(model_params, model_state, state.observation)
-    # TODO: shouldn't it be mask first, then scale?
-    logits = logits - jnp.max(logits, axis=-1, keepdims=True)
+    (logits, value), _ = forward.apply(model_params, model_state, state.observation, is_eval=True)
+    # Mask first, then scale for numerical stability.
     logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
+    logits = logits - jnp.max(logits, axis=-1, keepdims=True)
 
     reward = state.rewards[jnp.arange(state.rewards.shape[0]), current_player]
     value = jnp.where(state.terminated, 0.0, value)
@@ -110,15 +110,38 @@ def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.St
     return recurrent_fn_output, state
 
 
-def run_mcts(model, key, state):
+def action_from_square(square_code):
+    try:
+        col = ord(square_code[0]) - ord('a')
+        row = int(square_code[1]) - 1
+        if col < 0 or col >= 8 or row < 0 or row >= 8:
+            return None
+        return row * 8 + col
+    except Exception as e:
+        return None
+
+
+def run_mcts(model, key, state, debug=False):
     key, subkey = jax.random.split(key)
     keys = jax.random.split(subkey, mcts_config.batch_size)
     key, subkey = jax.random.split(key)
 
     model_params, model_state = model
     (logits, value), _ = forward.apply(
-        model_params, model_state, state.observation
+        model_params, model_state, state.observation, is_eval=True
     )
+
+    if debug:
+      logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
+      logits = logits - jnp.max(logits, axis=-1, keepdims=True)
+      action_weights = jax.scipy.special.softmax(logits.reshape(8, 8))
+      print("\n".join(
+                   "".join(f"{100*w:5.2f}%  " for w in w_row)
+                 for w_row in action_weights
+                ))
+      print(f"value={value}")
+      return None
+
     root = mctx.RootFnOutput(
         prior_logits=logits,
         value=value,
@@ -132,17 +155,17 @@ def run_mcts(model, key, state):
         recurrent_fn=recurrent_fn,
         num_simulations=mcts_config.num_simulations,
         max_depth=32,
-        qtransform=mctx.qtransform_completed_by_mix_value,
+        #qtransform=mctx.qtransform_completed_by_mix_value,
         gumbel_scale=0.0,
     )
     return policy_output
 
 
 if __name__ == "__main__":
-    with open("checkpoints/domineering_20260112173305/000000.ckpt", "rb") as f:
-      ckpt = pickle.load(f)
-      model2 = ckpt["model"]
-    with open("checkpoints/domineering_20260112173305/001000.ckpt", "rb") as f:
+    #with open("checkpoints/domineering_20260112173305/000000.ckpt", "rb") as f:
+    #  ckpt = pickle.load(f)
+    #  model2 = ckpt["model"]
+    with open("checkpoints/domineering_20260118213906/000150.ckpt", "rb") as f:
       ckpt = pickle.load(f)
       model1 = ckpt["model"]
 
@@ -162,7 +185,6 @@ if __name__ == "__main__":
         state: pgx.State = init_fn(keys)
 
         is_human_turn = is_human_first
-        hmove = 0
         while True:
             print ("   abcdefgh")
             print ("\n".join(
@@ -170,42 +192,34 @@ if __name__ == "__main__":
                 for idx, row in enumerate(state._x.board.reshape(8, 8))
             ))
             print("")
-            print("Human to play..." if is_human_turn else "AI to play...")
-            print("")
+            print(("Human to play..." if is_human_turn else "AI to play...") + f" ({'V' if state._x.color else 'H'}) c_p={state.current_player}")
+            print("", flush=True)
 
             if state.terminated.all():
                 print("Game over!")
                 break
             if is_human_turn:
                 # Human interactive version
-                #action_i = None
-                #while action_i is None or not state.legal_action_mask[0][action_i]:
-                #  square_code = input("move=")
-                #  try:
-                #    col = ord(square_code[0]) - ord('a')
-                #    row = int(square_code[1]) - 1
-                #    action_i = row * 8 + col
-                #  except Exception as e:
-                #    continue
-                #action = jnp.int32([action_i])
+                action_i = None
+                while action_i is None or not state.legal_action_mask[0][action_i]:
+                  action_i = action_from_square(input("move="))
+                action = jnp.int32([action_i])
 
-                #while action < 0 or not state.legal_action_mask[action].any():
-                #     action = random.randint(0, 62)  #len(state.legal_action_mask) - 1)
-
-                # First valid move
-                hmove = None
-                while hmove is None or not state.legal_action_mask[0][hmove]:
-                  hmove = random.randint(0, 62)
-                action = jnp.int32([hmove])
+                # Random valid move
+                #hmove = None
+                #while hmove is None or not state.legal_action_mask[0][hmove]:
+                #  hmove = random.randint(0, 62)
+                #action = jnp.int32([hmove])
 
                 # Use another model!
                 #policy_output = jax.jit(run_mcts)(model1, key, state)
                 #action = policy_output.action
             else:
+                run_mcts(model1, key, state, debug=True)
                 policy_output = jax.jit(run_mcts)(model1, key, state)
                 action_weights = policy_output.action_weights.reshape(8, 8)
                 print("\n".join(
-                  "".join(f"{w:.4f}  " for w in w_row)
+                  "".join(f"{100*w:6.2f}%  " for w in w_row)
                   for w_row in action_weights
                 ))
                 print("")
@@ -214,12 +228,15 @@ if __name__ == "__main__":
             state = step_fn(state, action)
             is_human_turn = not is_human_turn
 
-        # print(state.rewards)  # Are these correct?
-        print("Human wins!" if (state._x.winner == 0) else "AI wins!")
+        print("Human wins!" if (state._x.winner == 0) == is_human_first else "AI wins!")
         return state._x.winner == 0
 
-    p1_wins = 0
+    human_wins = 0
     for game_num in range(0, 5000):
-        if vs_human(game_num, is_human_first=((game_num % 2) == 0)):
-            p1_wins = p1_wins + 1
-        print(f"P1 win rate = {100 * p1_wins / (1 + game_num)}%")
+        is_human_first = ((game_num % 2) == 0)
+        p1_won = vs_human(game_num, is_human_first=is_human_first)
+        if is_human_first == p1_won:
+            human_wins = human_wins + 1
+            break
+        print(f"Human win rate = {100 * human_wins / (1 + game_num)}%", flush=True)
+        time.sleep(10)

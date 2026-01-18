@@ -69,8 +69,11 @@ class Game:
             winner=jax.lax.select(has_next_move, -1, state.color),
         )
 
-    def observe(self, state: GameState, _: Optional[Array] = None) -> Array:
-        return state.board.reshape(8, 8)
+    def observe(self, state: GameState, color: Optional[Array] = None) -> Array:
+        if color is None:
+            color = state.color
+        grid = state.board.reshape(8, 8)
+        return jax.lax.select(color == 0, grid, jnp.transpose(grid))
 
     def legal_action_mask(self, state: GameState) -> Array:
         # To be legal, a move have its own square and a neighbour free, and not be
