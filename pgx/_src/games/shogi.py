@@ -13,13 +13,14 @@
 # limitations under the License.
 
 
-from functools import partial
 from typing import NamedTuple
+from functools import partial
 
-import jax
-import jax.numpy as jnp
 import numpy as np
+import jax
 from jax import Array
+import jax.numpy as jnp
+
 
 MAX_TERMINATION_STEPS = 512  # From AZ paper
 
@@ -342,7 +343,7 @@ class GameState(NamedTuple):
     # Redundant information used only in _is_checked for speeding-up
     cache_m2b: Array = -jnp.ones(8, dtype=jnp.int32)
     cache_king: Array = jnp.int32(44)
-    #
+    # 
     legal_action_mask: Array = INIT_LEGAL_ACTION_MASK
 
 
@@ -358,12 +359,12 @@ class Game:
 
     def legal_action_mask(self, state: GameState) -> Array:
         return _legal_action_mask(state)
-
+    
     def is_terminal(self, state: GameState) -> Array:
         terminated = ~state.legal_action_mask.any()
         terminated = terminated | (MAX_TERMINATION_STEPS <= state.step_count)
         return terminated
-
+    
     def rewards(self, state: GameState) -> Array:
         has_legal_action = state.legal_action_mask.any()
         rewards = jnp.float32([[-1.0, 1.0], [1.0, -1.0]])[state.color]
@@ -589,7 +590,7 @@ def _is_legal_move_wo_pro(
                 state.board[from_] == KING,
                 jnp.int32(to),
                 state.cache_king,
-            ),
+            )
         )
     )
     return ok
@@ -810,3 +811,4 @@ def _observe(state: GameState, flip: bool = False) -> Array:
     feat2 = my_hand_feat + opp_hand_feat + [checked]
     feat = jnp.vstack(feat1 + feat2)
     return jnp.rot90(feat.transpose((1, 2, 0)), k=3)
+

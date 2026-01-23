@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import jax
 import numpy as np
-
+import jax
 from pgx._src.games.shogi import Game, GameState, _flip
 from pgx.shogi import State
 

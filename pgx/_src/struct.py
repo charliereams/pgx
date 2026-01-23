@@ -21,7 +21,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utilities for defining custom classes that can be used with jax transformations."""
+"""Utilities for defining custom classes that can be used with jax transformations.
+"""
 
 import dataclasses
 from typing import TypeVar
@@ -239,3 +240,4 @@ class PyTreeNode:
     def replace(self: TNode, **overrides) -> TNode:
         # stub for pytype
         raise NotImplementedError
+

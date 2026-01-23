@@ -17,9 +17,9 @@ import jax
 import jax.numpy as jnp
 
 import pgx.core as core
-from pgx._src.games.shogi import INIT_LEGAL_ACTION_MASK, Game, GameState, _observe
 from pgx._src.struct import dataclass
 from pgx._src.types import Array, PRNGKey
+from pgx._src.games.shogi import INIT_LEGAL_ACTION_MASK, Game, GameState, _observe
 
 TRUE = jnp.bool_(True)
 FALSE = jnp.bool_(False)
