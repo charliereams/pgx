@@ -811,4 +811,3 @@ def _observe(state: GameState, flip: bool = False) -> Array:
     feat2 = my_hand_feat + opp_hand_feat + [checked]
     feat = jnp.vstack(feat1 + feat2)
     return jnp.rot90(feat.transpose((1, 2, 0)), k=3)
-

@@ -32,7 +32,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
     ):
         return _make_az_baseline_model(model_id, download_dir)
     elif model_id == "domineering_v0":
-        return _make_default_baseline_model()
+        return _make_untrained_baseline_model()
     elif model_id in (
         "minatar-asterix_v0",
         "minatar-breakout_v0",
@@ -63,7 +63,7 @@ def _make_az_baseline_model(model_id: BaselineModelId, download_dir: str = "base
 
     return apply
 
-def _make_default_baseline_model():
+def _make_untrained_baseline_model():
     import haiku as hk
 
     model_args = {
@@ -72,7 +72,6 @@ def _make_default_baseline_model():
         "num_layers": 6,
         "resnet_v2": True,
     }
-    print (f"Loading default baseline {model_args}")
 
     def forward_fn(x, is_eval=False):
         net = _create_az_model_v0(**model_args)
@@ -83,7 +82,6 @@ def _make_default_baseline_model():
 
     key = jax.random.PRNGKey(0)
     dummy_obs = jnp.zeros((8, 8, 8, 2), dtype=jnp.float32)
-    # dummy_obs = jnp.stack([dummy_obs, jnp.ones_like(dummy_obs, dtype=jnp.bool_)], axis=-1)
     params, state = forward.init(key, dummy_obs, is_eval=False)
 
     def apply(obs):

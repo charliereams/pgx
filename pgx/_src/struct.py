@@ -240,4 +240,3 @@ class PyTreeNode:
     def replace(self: TNode, **overrides) -> TNode:
         # stub for pytype
         raise NotImplementedError
-
