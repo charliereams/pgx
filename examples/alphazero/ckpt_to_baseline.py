@@ -38,7 +38,7 @@ num_devices = len(devices)
 
 class MctsConfig(NamedTuple):
     seed: int = 7386708
-    num_simulations: int = 1000
+    num_simulations: int = 100
     batch_size: int = 1
 
 
@@ -165,7 +165,8 @@ if __name__ == "__main__":
     #with open("checkpoints/domineering_20260112173305/000000.ckpt", "rb") as f:
     #  ckpt = pickle.load(f)
     #  model2 = ckpt["model"]
-    with open("checkpoints/domineering_20260118213906/000400.ckpt", "rb") as f:
+    #with open("checkpoints/domineering_20260120173037/002050.ckpt", "rb") as f:
+    with open("checkpoints/domineering_20260122174624/001100.ckpt", "rb") as f:
       ckpt = pickle.load(f)
       model1 = ckpt["model"]
 

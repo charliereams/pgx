@@ -82,7 +82,8 @@ def _make_default_baseline_model():
     forward = hk.without_apply_rng(hk.transform_with_state(forward_fn))
 
     key = jax.random.PRNGKey(0)
-    dummy_obs = jnp.zeros((8, 8, 8), dtype=jnp.float32)
+    dummy_obs = jnp.zeros((8, 8, 8, 2), dtype=jnp.float32)
+    # dummy_obs = jnp.stack([dummy_obs, jnp.ones_like(dummy_obs, dtype=jnp.bool_)], axis=-1)
     params, state = forward.init(key, dummy_obs, is_eval=False)
 
     def apply(obs):

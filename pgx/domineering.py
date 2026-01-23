@@ -26,7 +26,11 @@ class State(core.State):
     """State for the game Domineering."""
 
     current_player: Array = jnp.int32(0)
-    observation: Array = jnp.ones((8, 8), dtype=jnp.bool_)
+    grid = jnp.ones((8, 8), dtype=jnp.bool_)
+    observation: Array = jnp.stack([
+        grid,
+        jnp.ones_like(grid)],
+        axis=-1)
     rewards: Array = jnp.float32([0.0, 0.0])
     terminated: Array = jnp.bool_(False)
     truncated: Array = jnp.bool_(False)

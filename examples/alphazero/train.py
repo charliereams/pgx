@@ -139,7 +139,7 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
             num_simulations=config.num_simulations,
             invalid_actions=~state.legal_action_mask,
             qtransform=mctx.qtransform_completed_by_mix_value,
-            gumbel_scale=0.0,  # 0.0 for perfect information games
+            gumbel_scale=1.0,  # 0.0 for perfect information games
         )
         actor = state.current_player
         keys = jax.random.split(key2, batch_size)

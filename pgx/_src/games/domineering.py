@@ -73,7 +73,10 @@ class Game:
         if color is None:
             color = state.color
         grid = state.board.reshape(8, 8)
-        return jax.lax.select(color == 0, grid, jnp.transpose(grid))
+        return jnp.stack([grid,
+                          (color == 0) * jnp.ones_like(grid, dtype=jnp.bool_)],
+                         axis=-1)
+        # return jax.lax.select(color == 0, grid, jnp.transpose(grid))
 
     def legal_action_mask(self, state: GameState) -> Array:
         # To be legal, a move have its own square and a neighbour free, and not be
