@@ -39,6 +39,21 @@ class State(core.State):
         return "g_hex"
 
 
+def black(tile_val, tri):
+    assert tile_val >= 1
+    assert tile_val <= 10
+    assert tri >= 0
+    assert tri <= 20
+    return tri * 20 + (tile_val - 1)
+
+def white(tile_val, tri):
+    assert tile_val >= 1
+    assert tile_val <= 10
+    assert tri >= 0
+    assert tri <= 20
+    return tri * 20 + (tile_val - 1) + 10
+
+
 class GHex(core.Env):
     """Environment for the game GHex."""
 
@@ -49,6 +64,10 @@ class GHex(core.Env):
     def _init(self, key: PRNGKey) -> State:
         current_player = jnp.int32(jax.random.bernoulli(key))
         return State(current_player=current_player, _x=self._game.init())  # type:ignore
+
+    def pretty_game(self, state: core.State):
+        assert isinstance(state, State)
+        return self._game.pretty_game(state._x)
 
     def _step(self, state: core.State, action: Array, key) -> State:
         del key

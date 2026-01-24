@@ -51,18 +51,18 @@ class GameState(NamedTuple):
     def pretty(self):
       return f"""
            ____________
-          /\    /\    /\                    0
-         /{self.h(0)}\{self.h(1)}/{self.h(2)}\{self.h(3)}/{self.h(4)}\                   1
-        /____\/____\/____\                  2
-       /\    /\    /\    /\                 3
-      /{self.h(5)}\{self.h(6)}/{self.h(7)}\{self.h(8)}/{self.h(9)}\{self.h(10)}/{self.h(11)}\                4
-     /____\/____\/____\/____\               5
-     \    /\    /\                          6
-      \{self.h(12)}/{self.h(13)}\{self.h(14)}/{self.h(15)}\                         7
-       \/____\/____\______                  8
-        \    /\    /\    /                  9
-         \{self.h(16)}/{self.h(17)}\{self.h(18)}/{self.h(19)}\{self.h(20)}/                  10
-          \/____\/____\/                   11
+          /\\    /\\    /\\                    0
+         /{self.h(0)}\\{self.h(1)}/{self.h(2)}\\{self.h(3)}/{self.h(4)}\\                   1
+        /____\\/____\\/____\\                  2
+       /\\    /\\    /\\    /\\                 3
+      /{self.h(5)}\\{self.h(6)}/{self.h(7)}\\{self.h(8)}/{self.h(9)}\\{self.h(10)}/{self.h(11)}\\                4
+     /____\\/____\\/____\\/____\\               5
+     \\    /\\    /\\                          6
+      \\{self.h(12)}/{self.h(13)}\\{self.h(14)}/{self.h(15)}\\                         7
+       \\/____\\/____\\______                  8
+        \\    /\\    /\\    /                  9
+         \\{self.h(16)}/{self.h(17)}\\{self.h(18)}/{self.h(19)}\\{self.h(20)}/                  10
+          \\/____\\/____\\/                   11
            """
 
 
@@ -110,6 +110,36 @@ class Game:
     def init(self) -> GameState:
         return GameState()
 
+
+    def h(self, state:GameState, i):
+      if state.board[0][i] == 10:
+          return "BT"
+      if state.board[0][i] == -10:
+          return "WT"
+      if state.board[0][i] == 0:
+          return "  "
+      if state.board[0][i] > 0:
+          return f"B{state.board[0][i]}"
+      else:
+          return f"W{abs(state.board[0][i])}"
+
+    def pretty_game(self, state: GameState):
+      return f"""
+           ____________
+          /\\    /\\    /\\
+         /{self.h(state,0)}\\{self.h(state,1)}/{self.h(state,2)}\\{self.h(state,3)}/{self.h(state,4)}\\
+        /____\\/____\\/____\\
+       /\\    /\\    /\\    /\\
+      /{self.h(state,5)}\\{self.h(state,6)}/{self.h(state,7)}\\{self.h(state,8)}/{self.h(state,9)}\\{self.h(state,10)}/{self.h(state,11)}\\
+     /____\\/____\\/____\\/____\\
+     \\    /\\    /\\
+      \\{self.h(state,12)}/{self.h(state,13)}\\{self.h(state,14)}/{self.h(state,15)}\\
+       \\/____\\/____\\______
+        \\    /\\    /\\    /
+         \\{self.h(state,16)}/{self.h(state,17)}\\{self.h(state,18)}/{self.h(state,19)}\\{self.h(state,20)}/
+          \\/____\\/____\\/
+           """
+
     def step(self, state: GameState, action: Array) -> GameState:
         """Performs a step in the GHex game.
 
@@ -137,10 +167,22 @@ class Game:
         if color is None:
             color = state.color
 
-        tile_order = jnp.array([[0, 1], [1, 0]], dtype=jnp.int32)
-        tile_repr = state.tiles[tile_order[color]] * _TILE_VAL
-        return jnp.vstack([state.board[:21] * (1 - 2 * color),
-                           jnp.pad(tile_repr, ((0, 0), (0, 11)))])
+        #tile_order = jnp.array([[0, 1], [1, 0]], dtype=jnp.int32)
+        #tile_repr = state.tiles[tile_order[color]] * _TILE_VAL
+        #return jnp.vstack([state.board[:21] * (1 - 2 * color),
+        #                   jnp.pad(tile_repr, ((0, 0), (0, 11)))])
+
+        #return jnp.vstack([
+        #     state.board[:21],
+        #     jnp.pad(state.tiles * _TILE_VAL, ((0, 0), (0, 11))),
+        #     jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
+        #   ])
+
+        tile_features = jnp.concatenate([state.tiles[0] * _TILE_VAL, state.tiles[1] * -_TILE_VAL])
+        return jnp.vstack([state.board[:21],
+                           (state.board[:21] == 0) * jnp.transpose(jnp.broadcast_to(tile_features, (21, 20))),
+                           jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
+                          ])
 
     def legal_action_mask(self, state: GameState) -> Array:
         tile_available = jnp.concatenate([state.tiles[0] * (1 - state.color), state.tiles[1] * state.color]) > 0

@@ -14,7 +14,7 @@
 
 import jax
 import jax.numpy as jnp
-from pgx.g_hex import GHex
+from pgx.g_hex import GHex, black, white
 
 jnp.set_printoptions(linewidth=6*20+1)
 
@@ -22,21 +22,6 @@ env = GHex()
 init = jax.jit(env.init)
 step = jax.jit(env.step)
 observe = jax.jit(env.observe)
-
-def black(tile_val, tri):
-    assert tile_val >= 1
-    assert tile_val <= 10
-    assert tri >= 0
-    assert tri <= 20
-    return tri * 20 + (tile_val - 1)
-
-def white(tile_val, tri):
-    assert tile_val >= 1
-    assert tile_val <= 10
-    assert tri >= 0
-    assert tri <= 20
-    return tri * 20 + (tile_val - 1) + 10
-
 
 def test_init():
     key = jax.random.PRNGKey(1)
@@ -261,13 +246,15 @@ def test_observe():
       [0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1,  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ])).all()
 
     state = step(state, black(1, 15))
     assert (observe(state) == jnp.int32([
-      [0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0],
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
       [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
     ])).all()
 
     state = step(state, white(10, 13))
@@ -275,6 +262,7 @@ def test_observe():
       [0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, -10, 0, 1, 0, 0, 0, 0, 0],
       [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1,  1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     ])).all()
 
 

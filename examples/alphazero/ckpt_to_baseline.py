@@ -1,4 +1,4 @@
-# Copyright 2023 The Pgx Authors. All Rights Reserved.
+# Copyright 2026 The Pgx Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import os
 import pickle
 import time
 import random
+import re
 from functools import partial
 from typing import NamedTuple
 
@@ -28,6 +29,7 @@ import mctx
 import pgx
 from omegaconf import OmegaConf
 from pgx.experimental import auto_reset
+from pgx.g_hex import black, white
 from pydantic import BaseModel
 
 from network import AZNet
@@ -38,7 +40,7 @@ num_devices = len(devices)
 
 class MctsConfig(NamedTuple):
     seed: int = 7386708
-    num_simulations: int = 2000
+    num_simulations: int = 1000
     batch_size: int = 1
 
 
@@ -120,8 +122,25 @@ def action_from_square(square_code):
     except Exception as e:
         return None
 
+def action_from_ghex_name(name, is_black):
+    try:
+        m = re.fullmatch("([0-9]+) on ([0-9]+)", name)
+        if m is None:
+            return None
+        tile = int(m.group(1))
+        triangle = int(m.group(2))
+        if is_black:
+            print(f"black({tile}, {triangle})")
+            return black(tile, triangle)
+        else:
+            print(f"white({tile}, {triangle})")
+            return white(tile, triangle)
+    except Exception as e:
+        print(e)
+        return None
 
-def run_mcts(model, key, state, debug=False):
+
+def run_mcts(model, key, state, debugDomineering=False, debugGHex=-1):
     key, subkey = jax.random.split(key)
     keys = jax.random.split(subkey, mcts_config.batch_size)
     key, subkey = jax.random.split(key)
@@ -131,14 +150,20 @@ def run_mcts(model, key, state, debug=False):
         model_params, model_state, state.observation, is_eval=True
     )
 
-    if debug:
+    if debugDomineering or debugGHex != -1:
       logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
       logits = logits - jnp.max(logits, axis=-1, keepdims=True)
-      action_weights = jax.scipy.special.softmax(logits.reshape(8, 8))
-      print("\n".join(
-                   "".join(f"{100*w:5.2f}%  " for w in w_row)
-                 for w_row in action_weights
-                ))
+      if debugDomineering:
+        action_weights = jax.scipy.special.softmax(logits.reshape(8, 8))
+        print("\n".join(
+                     "".join(f"{100*w:5.2f}%  " for w in w_row)
+                   for w_row in action_weights
+                  ))
+      elif debugGHex != -1:
+        action_weights = jax.scipy.special.softmax(logits.reshape(21, 2, 10))
+        print("Action weights:")
+        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row[debugGHex]])
+                         for tri_i, tri_row in enumerate(action_weights)]))
       print(f"value={value}")
       return None
 
@@ -161,8 +186,15 @@ def run_mcts(model, key, state, debug=False):
     return policy_output
 
 
+def pretty_tiles(tiles):
+  return "  ".join([(f"{val}" if tiles[i] else "  ")
+                   for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])])
+  #tile_values = tiles * jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=jnp.int32)
+  #return " ".join([f"{val:2}" for val in tile_values[tile_values > 0]])
+
 if __name__ == "__main__":
-    with open("checkpoints/domineering_20260122174624/001100.ckpt", "rb") as f:
+    #with open("checkpoints/domineering_20260122174624/001100.ckpt", "rb") as f:
+    with open("checkpoints/g_hex_20260125024939/000050.ckpt", "rb") as f:
       ckpt = pickle.load(f)
       model1 = ckpt["model"]
 
@@ -183,12 +215,21 @@ if __name__ == "__main__":
 
         is_human_turn = is_human_first
         while True:
-            print ("   abcdefgh")
-            print ("\n".join(
-                f"{idx+1} |" + "".join("·" if cell else "■" for cell in row) + "|"
-                for idx, row in enumerate(state._x.board.reshape(8, 8))
-            ))
-            print("")
+            if config.env_id == "domineering":
+              print("   abcdefgh")
+              print("\n".join(
+                  f"{idx+1} |" + "".join("·" if cell else "■" for cell in row) + "|"
+                  for idx, row in enumerate(state._x.board.reshape(8, 8))
+              ))
+              print("")
+            elif config.env_id == "g_hex":
+              _TILE_VAL = jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=jnp.int32)
+              print(env.pretty_game(state))
+              print("")
+              print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
+              print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
+              print("")
+
             print(("Human to play..." if is_human_turn else "AI to play...") + f" ({'V' if state._x.color else 'H'}) c_p={state.current_player}")
             print("", flush=True)
 
@@ -199,29 +240,44 @@ if __name__ == "__main__":
                 # Human interactive version
                 action_i = None
                 while action_i is None or not state.legal_action_mask[0][action_i]:
-                  action_i = action_from_square(input("move="))
+                    if config.env_id == "domineering":
+                        action_i = action_from_square(input("move="))
+                    elif config.env_id == "g_hex":
+                        action_i = action_from_ghex_name(input("move="), is_human_first)
+                    print(f"action_i={action_i} legal={state.legal_action_mask[0][action_i]}")
                 action = jnp.int32([action_i])
 
                 # Random valid move
-                #hmove = None
-                #while hmove is None or not state.legal_action_mask[0][hmove]:
-                #  hmove = random.randint(0, 62)
-                #action = jnp.int32([hmove])
+                #action_i = None
+                #while action_i is None or not state.legal_action_mask[0][action_i]:
+                #  action_i = random.randint(0, 21 * 10 * 2)
+                #action = jnp.int32([action_i])
 
                 # Use another model!
                 #policy_output = jax.jit(run_mcts)(model1, key, state)
                 #action = policy_output.action
             else:
-                run_mcts(model1, key, state, debug=True)
+                run_mcts(model1, key, state, debugDomineering=False, debugGHex = (1 if is_human_first else 0) if (config.env_id == "g_hex") else -1)
+                time.sleep(15)
                 policy_output = jax.jit(run_mcts)(model1, key, state)
-                action_weights = policy_output.action_weights.reshape(8, 8)
-                print("\n".join(
-                  "".join(f"{100*w:6.2f}%  " for w in w_row)
-                  for w_row in action_weights
-                ))
-                print("")
+                if config.env_id == "domineering":
+                    action_weights = policy_output.action_weights.reshape(8, 8)
+                    print("\n".join(
+                        "".join(f"{100*w:6.2f}%  " for w in w_row)
+                        for w_row in action_weights
+                    ))
+                    print("")
+                elif config.env_id == "g_hex":
+                    action_weights = policy_output.action_weights.reshape(21, 2, 10)
+                    print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row[1 if is_human_first else 0]])
+                                     for tri_i, tri_row in enumerate(action_weights)]))
+                    print("")
+
                 action = policy_output.action
-            print(f"Played {'abcdefgh'[action[0] % 8]}{1 + (action[0] // 8)}\n")
+            if config.env_id == "domineering":
+                print(f"Played {'abcdefgh'[action[0] % 8]}{1 + (action[0] // 8)}\n")
+            if config.env_id == "g_hex":
+                print(f"Played the {1 + (action[0] % 10)} on triangle {action[0] // 20}\n")
             state = step_fn(state, action)
             is_human_turn = not is_human_turn
 
@@ -230,7 +286,7 @@ if __name__ == "__main__":
 
     human_wins = 0
     for game_num in range(0, 5000):
-        is_human_first = ((game_num % 2) == 0)
+        is_human_first = ((game_num % 2) == 1)
         p1_won = vs_human(game_num, is_human_first=is_human_first)
         if is_human_first == p1_won:
             human_wins = human_wins + 1
