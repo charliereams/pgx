@@ -40,7 +40,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
             "num_layers": 6,
             "resnet_v2": True,
           },
-          shape = (69, 22, 21))
+          shape = (3, 21, 22))
     elif model_id == "domineering_v0":
         return _make_untrained_baseline_model(
            model_args = {

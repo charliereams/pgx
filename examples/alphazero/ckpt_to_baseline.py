@@ -258,7 +258,7 @@ if __name__ == "__main__":
                 #action = policy_output.action
             else:
                 run_mcts(model1, key, state, debugDomineering=False, debugGHex = (1 if is_human_first else 0) if (config.env_id == "g_hex") else -1)
-                time.sleep(15)
+                #time.sleep(15)
                 policy_output = jax.jit(run_mcts)(model1, key, state)
                 if config.env_id == "domineering":
                     action_weights = policy_output.action_weights.reshape(8, 8)
@@ -286,7 +286,7 @@ if __name__ == "__main__":
 
     human_wins = 0
     for game_num in range(0, 5000):
-        is_human_first = ((game_num % 2) == 1)
+        is_human_first = ((game_num % 2) == 0)
         p1_won = vs_human(game_num, is_human_first=is_human_first)
         if is_human_first == p1_won:
             human_wins = human_wins + 1

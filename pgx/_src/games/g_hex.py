@@ -178,11 +178,17 @@ class Game:
         #     jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
         #   ])
 
-        tile_features = jnp.concatenate([state.tiles[0] * _TILE_VAL, state.tiles[1] * -_TILE_VAL])
-        return jnp.vstack([state.board[:21],
+        tile_features = jnp.concatenate([state.tiles[color] * _TILE_VAL, state.tiles[1 - color] * -_TILE_VAL])
+        return jnp.vstack([state.board[:21] * (1 - 2 * color),
                            (state.board[:21] == 0) * jnp.transpose(jnp.broadcast_to(tile_features, (21, 20))),
-                           jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
-                          ])
+                           jnp.ones(21, dtype=jnp.int32) * color,
+                          ]).transpose()
+
+        #tile_features = jnp.concatenate([state.tiles[0] * _TILE_VAL, state.tiles[1] * -_TILE_VAL])
+        #return jnp.vstack([state.board[:21],
+        #                   (state.board[:21] == 0) * jnp.transpose(jnp.broadcast_to(tile_features, (21, 20))),
+        #                   jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
+        #                  ])
 
     def legal_action_mask(self, state: GameState) -> Array:
         tile_available = jnp.concatenate([state.tiles[0] * (1 - state.color), state.tiles[1] * state.color]) > 0
