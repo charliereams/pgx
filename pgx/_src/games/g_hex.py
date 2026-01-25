@@ -150,7 +150,7 @@ class Game:
         Returns:
           The new game state after the action has been applied.
         """
-        triangle = action // 20
+        triangle = action // 10  # was 20
         tile_i = action % 10
 
         new_board = state.board.at[triangle].set((1 + tile_i) * (1 - 2 * state.color))
@@ -178,11 +178,28 @@ class Game:
         #     jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
         #   ])
 
+        virtual_up =   jnp.zeros(24, dtype=jnp.int32).at[1].set(1) .at[3].set(color)
+        virtual_down = jnp.zeros(24, dtype=jnp.int32).at[1].set(-1).at[3].set(color)
+
         tile_features = jnp.concatenate([state.tiles[color] * _TILE_VAL, state.tiles[1 - color] * -_TILE_VAL])
-        return jnp.vstack([state.board[:21] * (1 - 2 * color),
-                           (state.board[:21] == 0) * jnp.transpose(jnp.broadcast_to(tile_features, (21, 20))),
-                           jnp.ones(21, dtype=jnp.int32) * color,
-                          ]).transpose()
+        fstack = jnp.vstack([state.board[:21] * (1 - 2 * color),
+                             jnp.array([
+                                1, -1,  1, -1,  1,
+                                1, -1,  1, -1,  1, -1,  1,
+                               -1,  1, -1,  1,
+                               -1,  1, -1,  1, -1,
+                             ], dtype=jnp.int32),
+                             jnp.ones(21, dtype=jnp.int32),
+                             jnp.ones(21, dtype=jnp.int32) * color,
+                             (state.board[:21] == 0) * jnp.transpose(jnp.broadcast_to(tile_features, (21, 20))),
+                            ]).transpose()
+
+        return jnp.array([
+          [virtual_down, fstack[0],  fstack[1],  fstack[2],  fstack[3],    fstack[4],   virtual_down],
+          [fstack[5],    fstack[6],  fstack[7],  fstack[8],  fstack[9],    fstack[10],  fstack[11]],
+          [fstack[12],   fstack[13], fstack[14], fstack[15], virtual_down, virtual_up,  virtual_down],
+          [virtual_up,   fstack[16], fstack[17], fstack[18], fstack[19],   fstack[20],  virtual_up],
+        ])
 
         #tile_features = jnp.concatenate([state.tiles[0] * _TILE_VAL, state.tiles[1] * -_TILE_VAL])
         #return jnp.vstack([state.board[:21],
@@ -191,7 +208,8 @@ class Game:
         #                  ])
 
     def legal_action_mask(self, state: GameState) -> Array:
-        tile_available = jnp.concatenate([state.tiles[0] * (1 - state.color), state.tiles[1] * state.color]) > 0
+        # tile_available = jnp.concatenate([state.tiles[0] * (1 - state.color), state.tiles[1] * state.color]) > 0
+        tile_available = state.tiles[state.color]
         def can_play(bl):
             return tile_available & bl
         return jax.vmap(can_play)(state.board[:21] == 0).flatten()

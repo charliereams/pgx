@@ -30,7 +30,7 @@ class State(core.State):
     rewards: Array = jnp.float32([0.0, 0.0])
     terminated: Array = jnp.bool_(False)
     truncated: Array = jnp.bool_(False)
-    legal_action_mask: Array = jnp.tile(jnp.concatenate([jnp.ones(10, dtype=jnp.bool_), jnp.zeros(10, dtype=jnp.bool_)]), 21)
+    legal_action_mask: Array = jnp.tile(jnp.ones(10, dtype=jnp.bool_), 21)
     _step_count: Array = jnp.int32(0)
     _x: GameState = GameState()
 
@@ -44,14 +44,10 @@ def black(tile_val, tri):
     assert tile_val <= 10
     assert tri >= 0
     assert tri <= 20
-    return tri * 20 + (tile_val - 1)
+    return tri * 10 + (tile_val - 1)
 
 def white(tile_val, tri):
-    assert tile_val >= 1
-    assert tile_val <= 10
-    assert tri >= 0
-    assert tri <= 20
-    return tri * 20 + (tile_val - 1) + 10
+    return black(tile_val, tri)
 
 
 class GHex(core.Env):

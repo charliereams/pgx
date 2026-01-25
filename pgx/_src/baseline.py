@@ -27,6 +27,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
     if model_id in (
         "animal_shogi_v0",
         "gardner_chess_v0",
+        "g_hex_v0",
         "go_9x9_v0",
         "hex_v0",
         "othello_v0",
@@ -35,12 +36,12 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
     elif model_id == "g_hex_v0":
         return _make_untrained_baseline_model(
            model_args = {
-            "num_actions": 21 * 10 * 2,
+            "num_actions": 21 * 10,
             "num_channels": 256,
             "num_layers": 6,
             "resnet_v2": True,
           },
-          shape = (3, 21, 22))
+          shape = (3, 4, 7, 24))
     elif model_id == "domineering_v0":
         return _make_untrained_baseline_model(
            model_args = {
@@ -157,6 +158,19 @@ def _load_baseline_model(baseline_model: BaselineModelId, basedir: str = "baseli
     os.makedirs(basedir, exist_ok=True)
 
     # download baseline model if not exists
+    if baseline_model == "g_hex_v0":
+        with open("checkpoints/g_hex_20260125182112/000300.ckpt", "rb") as f:
+            ckpt = pickle.load(f)
+        config = ckpt["config"]
+        args = {
+            "num_actions": 21 * 10,
+            "num_channels": config.num_channels,
+            "num_layers": config.num_layers,
+            "resnet_v2": config.resnet_v2,
+        }
+        params, state = ckpt["model"]
+        return args, params, state
+
     filename = os.path.join(basedir, baseline_model + ".ckpt")
     if not os.path.exists(filename):
         url = _get_download_url(baseline_model)
