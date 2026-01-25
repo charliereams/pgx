@@ -12,16 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import chex
-import datetime
 import os
 import pickle
-import time
 import random
 import re
 from functools import partial
 from typing import NamedTuple
-
 import haiku as hk
 import jax
 import jax.numpy as jnp
@@ -29,10 +25,8 @@ import numpy as np
 import mctx
 import pgx
 from omegaconf import OmegaConf
-from pgx.experimental import auto_reset
 from pgx.g_hex import black, white
 from pydantic import BaseModel
-
 from network import AZNet
 from abc import ABC, abstractmethod
 
@@ -183,7 +177,8 @@ class ModelAgent(Agent):
         return f"Model[{self.name_prefix}:sims={self.mcts_config.num_simulations}]"
 
     def getAction(self, key, state):
-        self.mcts(key, state, debug_domineering=(self.env_id == "domineering"), debug_g_hex=(self.env_id == "g_hex"))
+        # Debug view into the policy evaluation: (slow)
+        # self.mcts(key, state, debug_domineering=(self.env_id == "domineering"), debug_g_hex=(self.env_id == "g_hex"))
 
         policy_output = self.mcts_jit(key, state)
         if self.env_id == "domineering":
@@ -266,6 +261,8 @@ if __name__ == "__main__":
     #model_domineering = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
     config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
     config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
+    model_agent_1 = ModelAgent("d6", tourney_config.env_id, MctsConfig(seed=33910238, num_simulations=300), config1, model1)
+    model_agent_2 = ModelAgent("d7", tourney_config.env_id, MctsConfig(seed=12389211, num_simulations=300), config2, model2)
 
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
@@ -312,10 +309,10 @@ if __name__ == "__main__":
 
 
     agents = [
+        model_agent_1,
+        model_agent_2,
         #RandomAgent(),
         #KeyboardAgent(tourney_config.env_id),
-        ModelAgent("d6", tourney_config.env_id, MctsConfig(seed=33910238, num_simulations=300), config1, model1),
-        ModelAgent("d7", tourney_config.env_id, MctsConfig(seed=12389211, num_simulations=300), config2, model2),
         #ModelAgent(tourney_config.env_id, MctsConfig(seed=24364321, num_simulations=1000), model1),
     ]
     wins = np.array([0, 0])
@@ -335,4 +332,3 @@ if __name__ == "__main__":
                     {agents[0].getName():>20}: {win_rates[0]:6.2f}% ({wins[0]})
                     {agents[1].getName():>20}: {win_rates[1]:6.2f}% ({wins[1]})
                """, flush=True)
-        time.sleep(10)
