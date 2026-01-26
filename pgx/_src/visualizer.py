@@ -357,12 +357,12 @@ class Visualizer:
                     "gray",
                 )
         elif _state.env_id == "domineering":
-            from pgx._src.dwg.go import _make_go_dwg
+            from pgx._src.dwg.domineering import _make_domineering_dwg
 
             self.config["GRID_SIZE"] = 35
             self.config["BOARD_WIDTH"] = 8
             self.config["BOARD_HEIGHT"] = 8
-            self._make_dwg_group = lambda x,y,z: None
+            self._make_dwg_group = _make_domineering_dwg
             self.config["COLOR_SET"] =  ColorSet(
                     "black",
                     "darkgray",

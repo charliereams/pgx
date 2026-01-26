@@ -152,41 +152,54 @@ def test_win_check():
 def test_observe():
     key = jax.random.PRNGKey(0)
     state = init(key)
-    obs = observe(state, state.current_player)
-    assert obs.shape == (8, 8)
 
-    state = step(state, 1)
-    obs = observe(state)
     assert (
-        obs
+        observe(state)
         == jnp.bool_(
             [
-                [True, False, False, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
             ]
         )
     ).all()
 
-    state = step(state, 55)
-    obs = observe(state)
+    state = step(state, 1) # 1 = (0, 1)
     assert (
-        obs
+        observe(state)
         == jnp.bool_(
             [
-                [True, True, True, True, True, True, True, True],
-                [False, True, True, True, True, True, True, True],
-                [False, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, True, True],
-                [True, True, True, True, True, True, False, False],
+                [[ True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[False, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[False, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[ True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[ True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[ True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[ True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+                [[ True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False], [True, False]],
+            ]
+        )
+    ).all()
+
+    state = step(state, 55) # 55 = (6, 7)
+    obs = observe(state)
+    assert (
+        observe(state)
+        == jnp.bool_(
+            [
+                [[ True,  True], [False, True], [False, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [False, True]],
+                [[ True,  True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [ True, True], [False, True]],
             ]
         )
     ).all()

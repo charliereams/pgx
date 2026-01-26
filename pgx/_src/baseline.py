@@ -50,7 +50,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
             "num_layers": 6,
             "resnet_v2": True,
           },
-          shape = (8, 8, 8, 2))
+          shape = (2, 8, 8, 2))
     elif model_id in (
         "minatar-asterix_v0",
         "minatar-breakout_v0",

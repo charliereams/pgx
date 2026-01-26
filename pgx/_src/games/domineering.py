@@ -59,7 +59,7 @@ class Game:
             return new_board[move_mask].all(axis=0)
 
         # Game is over if the player next to play has no legal moves.
-        has_next_move = jax.vmap(can_play)(jax.lax.select(state.color == 0, MASK_CACHE_V, MASK_CACHE_H)).any()
+        has_next_move = jax.vmap(can_play)(jax.lax.select(state.color == 0, _MASK_CACHE_V, _MASK_CACHE_H)).any()
 
         return state._replace(  # type: ignore
             color=1 - state.color,
@@ -71,18 +71,21 @@ class Game:
         if color is None:
             color = state.color
         grid = state.board.reshape(8, 8)
-        return jnp.stack([grid,
-                          (color == 0) * jnp.ones_like(grid, dtype=jnp.bool_)],
-                         axis=-1)
+        return jnp.dstack([
+            # Feature 0: is square empty. Tranposed so current player is always horizontal.
+            jax.lax.select(color == 0, grid, grid.transpose()),
+            # Feature 1: whose turn (1-hot).
+            (color == 0) * jnp.ones_like(grid, dtype=jnp.bool_),
+        ])
 
     def legal_action_mask(self, state: GameState) -> Array:
-        # To be legal, a move have its own square and a neighbour free, and not be
+        # To be legal, a move must have its own square and a neighbour free, and not be
         # on the edge of the board. The relevant definition of neighbour and edge
         # depends on the player's direction.
         return state.board & jax.lax.select(
             state.color == 0,
-            EDGE_EXCLUDER_H & jnp.roll(state.board.reshape(8, 8), shift=-1, axis=1).flatten(),
-            EDGE_EXCLUDER_V & jnp.roll(state.board, shift=-8, axis=0),
+            _EDGE_EXCLUDER_H & jnp.roll(state.board.reshape(8, 8), shift=-1, axis=1).flatten(),
+            _EDGE_EXCLUDER_V & jnp.roll(state.board, shift=-8, axis=0),
         )
 
     def is_terminal(self, state: GameState) -> Array:
@@ -113,9 +116,9 @@ def _make_mask_cache_vertical():
 
 
 # Precomputed masks for required empty squares for each possible move.
-MASK_CACHE_H = _make_mask_cache_horizontal()
-MASK_CACHE_V = _make_mask_cache_vertical()
+_MASK_CACHE_H = _make_mask_cache_horizontal()
+_MASK_CACHE_V = _make_mask_cache_vertical()
 
 # Blockers for moves along the (player-appropriate) edge.
-EDGE_EXCLUDER_H = jnp.tile(jnp.ones(8, jnp.bool_).at[7].set(False), 8)
-EDGE_EXCLUDER_V = jnp.append(jnp.tile(jnp.ones(8, jnp.bool_), 7), jnp.zeros(8, jnp.bool_))
+_EDGE_EXCLUDER_H = jnp.tile(jnp.ones(8, jnp.bool_).at[7].set(False), 8)
+_EDGE_EXCLUDER_V = jnp.append(jnp.tile(jnp.ones(8, jnp.bool_), 7), jnp.zeros(8, jnp.bool_))

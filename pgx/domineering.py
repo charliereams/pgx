@@ -77,9 +77,7 @@ class Domineering(core.Env):
 
     def _observe(self, state: core.State, player_id: Array) -> Array:
         assert isinstance(state, State)
-        curr_color = state._x.color
-        my_color = jax.lax.select(player_id == state.current_player, curr_color, 1 - curr_color)
-        return self._game.observe(state._x, my_color)
+        return self._game.observe(state._x)
 
     @property
     def id(self) -> core.EnvId:
