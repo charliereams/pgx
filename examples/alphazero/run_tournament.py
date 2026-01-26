@@ -16,6 +16,7 @@ import os
 import pickle
 import random
 import re
+import time
 from functools import partial
 from typing import NamedTuple
 import haiku as hk
@@ -32,13 +33,13 @@ from abc import ABC, abstractmethod
 
 
 class TourneyConfig(BaseModel):
-    env_id: pgx.EnvId = "go_9x9"
+    env_id: pgx.EnvId = "g_hex"
     seed: int = 49064405
     games: int = 256
 
 
 class Config(BaseModel):
-    env_id: pgx.EnvId = "domineering"
+    env_id: pgx.EnvId = "g_hex"
     seed: int = 0
     max_num_iters: int = 400
     # network params
@@ -60,7 +61,6 @@ class Config(BaseModel):
 
 
 class MctsConfig(NamedTuple):
-    seed: int = 7386708
     num_simulations: int = 30
     max_num_considered_actions: int = 16
 
@@ -179,8 +179,11 @@ class ModelAgent(Agent):
     def getAction(self, key, state):
         # Debug view into the policy evaluation: (slow)
         # self.mcts(key, state, debug_domineering=(self.env_id == "domineering"), debug_g_hex=(self.env_id == "g_hex"))
-
+        start_time = time.perf_counter()
         policy_output = self.mcts_jit(key, state)
+        print(f"Thought for {time.perf_counter() - start_time:.1f} seconds.")
+
+        # Print some game-specific debug info.
         if self.env_id == "domineering":
             action_weights = policy_output.action_weights.reshape(8, 8)
             print("\n".join(
@@ -259,13 +262,14 @@ if __name__ == "__main__":
 
     devices = jax.local_devices()
 
-    #model_domineering = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
-    config1, model1 = load_from_checkpoint("domineering_20260127025746/000005.ckpt")
-    config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
-    #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
+    #config1, model1 = load_from_checkpoint("domineering_20260127025746/000005.ckpt")
+    #config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
+    config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
+    config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
+    config1, model1 = load_from_checkpoint("g_hex_20260126043211/000700.ckpt")
     #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
-    model_agent_1 = ModelAgent("d6", tourney_config.env_id, MctsConfig(seed=33910238, num_simulations=300), config1, model1)
-    model_agent_2 = ModelAgent("d7", tourney_config.env_id, MctsConfig(seed=12389211, num_simulations=300), config2, model2)
+    model_agent_1 = ModelAgent("d6", tourney_config.env_id, MctsConfig(num_simulations=1), config1, model1)
+    model_agent_2 = ModelAgent("d7", tourney_config.env_id, MctsConfig(num_simulations=1000), config1, model1)
 
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
@@ -274,7 +278,7 @@ if __name__ == "__main__":
     print("\n\nLet's play!\n\n\n")
 
     def run_game(game_num, agents):
-        root_key = jax.random.PRNGKey(9237823 ^ game_num)
+        root_key = jax.random.PRNGKey(tourney_config.seed ^ game_num)
         key, subkey = jax.random.split(root_key)
         keys = jax.random.split(subkey, 1)  # Batch size must be 1.
         state: pgx.State = init_fn(keys)
@@ -316,7 +320,6 @@ if __name__ == "__main__":
         model_agent_2,
         #RandomAgent(),
         #KeyboardAgent(tourney_config.env_id),
-        #ModelAgent(tourney_config.env_id, MctsConfig(seed=24364321, num_simulations=1000), model1),
     ]
     wins = np.array([0, 0])
     for game_num in range(0, tourney_config.games):
