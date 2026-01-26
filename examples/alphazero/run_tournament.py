@@ -62,7 +62,7 @@ class Config(BaseModel):
 class MctsConfig(NamedTuple):
     seed: int = 7386708
     num_simulations: int = 30
-
+    max_num_considered_actions: int = 16
 
 class Agent(ABC):
     @abstractmethod
@@ -235,8 +235,9 @@ class ModelAgent(Agent):
             root=root,
             invalid_actions=~state.legal_action_mask,
             recurrent_fn=recurrent_fn,
-            num_simulations=round(mcts_config.num_simulations),
-            qtransform=mctx.qtransform_completed_by_mix_value,
+            num_simulations=mcts_config.num_simulations,
+            max_num_considered_actions=mcts_config.max_num_considered_actions,
+            qtransform=mctx.qtransform_completed_by_mix_value, # TODO: optimize?
             gumbel_scale=0.0,
         )
         return policy_output
@@ -259,8 +260,10 @@ if __name__ == "__main__":
     devices = jax.local_devices()
 
     #model_domineering = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
-    config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
-    config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
+    config1, model1 = load_from_checkpoint("domineering_20260127025746/000005.ckpt")
+    config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
+    #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
+    #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
     model_agent_1 = ModelAgent("d6", tourney_config.env_id, MctsConfig(seed=33910238, num_simulations=300), config1, model1)
     model_agent_2 = ModelAgent("d7", tourney_config.env_id, MctsConfig(seed=12389211, num_simulations=300), config2, model2)
 
