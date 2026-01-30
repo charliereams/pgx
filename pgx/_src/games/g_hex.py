@@ -104,6 +104,10 @@ _ADJ = jnp.array([
 _WINNER_BY_SIGN = jnp.array([1, -1, 0], dtype=jnp.int32)
 _TILE_VAL = jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=jnp.int32)
 
+def _golden_sum(new_board):
+    return (new_board[_ADJ].sum(axis=1) * (new_board[:21] == 0)).sum()
+
+
 class Game:
     """The game representation of GHex on an 8x8 board."""
 
@@ -140,6 +144,7 @@ class Game:
           \\/____\\/____\\/
            """
 
+
     def step(self, state: GameState, action: Array) -> GameState:
         """Performs a step in the GHex game.
 
@@ -154,7 +159,7 @@ class Game:
         tile_i = action % 10
 
         new_board = state.board.at[triangle].set((1 + tile_i) * (1 - 2 * state.color))
-        golden_sum = (new_board[_ADJ].sum(axis=1) * (new_board[:21] == 0)).sum()
+        golden_sum = _golden_sum(new_board)
 
         return state._replace(  # type: ignore
             board=new_board,
@@ -218,8 +223,9 @@ class Game:
         return state.tiles.sum() == 0
 
     def rewards(self, state: GameState) -> Array:
+        golden_sum = _golden_sum(state.board)
         return jax.lax.select(
             state.winner >= 0,
-            jnp.float32([-1, -1]).at[state.winner].set(1),
+            jnp.float32([0, 0]).at[state.winner].set(golden_sum).at[1 - state.winner].set(-golden_sum),
             jnp.zeros(2, jnp.float32),
         )
