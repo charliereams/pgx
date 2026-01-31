@@ -185,7 +185,10 @@ class ModelAgent(Agent):
 
         # Print some game-specific debug info.
         if self.env_id == "domineering":
-            action_weights = policy_output.action_weights.reshape(8, 8)
+            action_weights = jnp.hstack([
+                policy_output.action_weights.reshape(8, 7),
+                jnp.zeros((8, 1), dtype=jnp.float32),
+            ])
             print("\n".join(
                         "".join(f"{100*w:6.2f}%  " for w in w_row)
                         for w_row in action_weights
@@ -240,7 +243,7 @@ class ModelAgent(Agent):
             recurrent_fn=recurrent_fn,
             num_simulations=mcts_config.num_simulations,
             max_num_considered_actions=mcts_config.max_num_considered_actions,
-            qtransform=mctx.qtransform_completed_by_mix_value, # TODO: optimize?
+            #qtransform=mctx.qtransform_completed_by_mix_value, # TODO: optimize? https://github.com/google-deepmind/mctx/blob/main/mctx/_src/policies.py
             gumbel_scale=0.0,
         )
         return policy_output
@@ -255,6 +258,12 @@ def load_from_checkpoint(path):
       ckpt = pickle.load(f)
       return ckpt["config"], ckpt["model"]
 
+
+def readable_domineering_board(state):
+  board = state._x.board[0]
+  return jax.lax.select(state.current_player[0] == 0, board, board.transpose())
+
+
 if __name__ == "__main__":
     tourney_conf_dict = OmegaConf.from_cli()
     tourney_config: TourneyConfig = TourneyConfig(**tourney_conf_dict)
@@ -262,14 +271,15 @@ if __name__ == "__main__":
 
     devices = jax.local_devices()
 
-    #config1, model1 = load_from_checkpoint("domineering_20260127025746/000005.ckpt")
+    config1, model1 = load_from_checkpoint("domineering_20260131044700/000100.ckpt")
+    config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
     #config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
-    config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
-    config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
-    config1, model1 = load_from_checkpoint("g_hex_20260126043211/000700.ckpt")
+    #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
     #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
-    model_agent_1 = ModelAgent("d6", tourney_config.env_id, MctsConfig(num_simulations=1), config1, model1)
-    model_agent_2 = ModelAgent("d7", tourney_config.env_id, MctsConfig(num_simulations=1000), config1, model1)
+    #config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
+    #config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt")
+    model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
+    model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=1, max_num_considered_actions=2), config2, model2)
 
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
@@ -289,7 +299,7 @@ if __name__ == "__main__":
               print("   abcdefgh")
               print("\n".join(
                   f"{idx+1} |" + "".join("·" if cell else "■" for cell in row) + "|"
-                  for idx, row in enumerate(state._x.board.reshape(8, 8))
+                  for idx, row in enumerate(readable_domineering_board(state))
               ))
               print("")
             elif tourney_config.env_id == "g_hex":
@@ -308,7 +318,7 @@ if __name__ == "__main__":
             print(f"{agent.getName()} to play...", flush=True)
             action = agent.getAction(key, state)
             if tourney_config.env_id == "domineering":
-                print(f"{agent.getName()} played {'abcdefgh'[action[0] % 8]}{1 + (action[0] // 8)}\n")
+                print(f"{agent.getName()} played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}\n")
             if tourney_config.env_id == "g_hex":
                 print(f"{agent.getName()} played the {1 + (action[0] % 10)} on triangle {action[0] // 10}\n")
             state = step_fn(state, action)
@@ -316,10 +326,10 @@ if __name__ == "__main__":
 
 
     agents = [
-        model_agent_1,
-        model_agent_2,
         #RandomAgent(),
         #KeyboardAgent(tourney_config.env_id),
+        model_agent_1,
+        model_agent_2,
     ]
     wins = np.array([0, 0])
     for game_num in range(0, tourney_config.games):

@@ -45,8 +45,8 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
     elif model_id == "domineering_v0":
         return _make_untrained_baseline_model(
            model_args = {
-            "num_actions": 64,
-            "num_channels": 256,
+            "num_actions": 8 * 7,
+            "num_channels": 128,
             "num_layers": 6,
             "resnet_v2": True,
           },

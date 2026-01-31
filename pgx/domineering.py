@@ -26,15 +26,14 @@ class State(core.State):
     """State for the game Domineering."""
 
     current_player: Array = jnp.int32(0)
-    grid = jnp.ones((8, 8), dtype=jnp.bool_)
-    observation: Array = jnp.stack([
-        grid,
-        jnp.ones_like(grid)],
-        axis=-1)
     rewards: Array = jnp.float32([0.0, 0.0])
     terminated: Array = jnp.bool_(False)
     truncated: Array = jnp.bool_(False)
-    legal_action_mask: Array = jnp.tile(jnp.ones(8, dtype=jnp.bool_).at[7].set(False), 8)
+    observation: Array = jnp.dstack([
+        jnp.ones((8, 8), jnp.bool),
+        jnp.ones((8, 8), jnp.bool),
+    ])
+    legal_action_mask: Array = jnp.ones(8 * 7, dtype=jnp.bool_)
     _step_count: Array = jnp.int32(0)
     _x: GameState = GameState()
 

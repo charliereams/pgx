@@ -32,7 +32,7 @@ class GameState(NamedTuple):
     #  [40, 41, 42, 43, 44, 45, 46, 47],
     #  [48, 49, 50, 51, 52, 53, 54, 55],
     #  [56, 57, 58, 59, 60, 61, 62, 63]]
-    board: Array = jnp.ones(64, jnp.bool_)  # True (available), False (occupied)
+    board: Array = jnp.ones((8, 8), jnp.bool_)  # True (available), False (occupied)
     winner: Array = jnp.int32(-1)
 
 
@@ -53,13 +53,18 @@ class Game:
         Returns:
           The new game state after the action has been applied.
         """
-        new_board = state.board.at[jnp.array([action, action + jax.lax.select(state.color == 0, 1, 8)])].set(False)
+
+        # Transpose the move index so that the same action is mapped to the same square.
+        x = action % 7
+        y = action // 7
+
+        new_board = state.board.at[y, x].set(False).at[y, x + 1].set(False).transpose()
 
         def can_play(move_mask):
-            return new_board[move_mask].all(axis=0)
+            return new_board.flatten()[move_mask].all()
 
         # Game is over if the player next to play has no legal moves.
-        has_next_move = jax.vmap(can_play)(jax.lax.select(state.color == 0, _MASK_CACHE_V, _MASK_CACHE_H)).any()
+        has_next_move = jax.vmap(can_play)(_MASK_CACHE).any()
 
         return state._replace(  # type: ignore
             color=1 - state.color,
@@ -70,23 +75,20 @@ class Game:
     def observe(self, state: GameState, color: Optional[Array] = None) -> Array:
         if color is None:
             color = state.color
-        grid = state.board.reshape(8, 8)
         return jnp.dstack([
             # Feature 0: is square empty. Tranposed so current player is always horizontal.
-            jax.lax.select(color == 0, grid, grid.transpose()),
+            state.board,
             # Feature 1: whose turn (1-hot).
-            (color == 0) * jnp.ones_like(grid, dtype=jnp.bool_),
+            (color == 0) * jnp.ones_like(state.board, dtype=jnp.bool_),
         ])
 
     def legal_action_mask(self, state: GameState) -> Array:
         # To be legal, a move must have its own square and a neighbour free, and not be
         # on the edge of the board. The relevant definition of neighbour and edge
         # depends on the player's direction.
-        return state.board & jax.lax.select(
-            state.color == 0,
-            _EDGE_EXCLUDER_H & jnp.roll(state.board.reshape(8, 8), shift=-1, axis=1).flatten(),
-            _EDGE_EXCLUDER_V & jnp.roll(state.board, shift=-8, axis=0),
-        )
+        playable = state.board & jnp.roll(state.board, shift=-1, axis=1)
+        # Strip off the last column (which is never playable, and is also set incorrectly).
+        return playable[:, :-1].flatten()
 
     def is_terminal(self, state: GameState) -> Array:
         return state.winner >= 0  # Game always ends with a winner.
@@ -99,7 +101,7 @@ class Game:
         )
 
 
-def _make_mask_cache_horizontal():
+def _make_mask_cache():
     move_masks = []
     for x in range(7):
         for y in range(8):
@@ -107,18 +109,5 @@ def _make_mask_cache_horizontal():
     return jnp.array(move_masks)
 
 
-def _make_mask_cache_vertical():
-    move_masks = []
-    for x in range(8):
-        for y in range(7):
-            move_masks.append(jnp.array([y * 8 + x, y * 8 + x + 8]))
-    return jnp.array(move_masks)
-
-
 # Precomputed masks for required empty squares for each possible move.
-_MASK_CACHE_H = _make_mask_cache_horizontal()
-_MASK_CACHE_V = _make_mask_cache_vertical()
-
-# Blockers for moves along the (player-appropriate) edge.
-_EDGE_EXCLUDER_H = jnp.tile(jnp.ones(8, jnp.bool_).at[7].set(False), 8)
-_EDGE_EXCLUDER_V = jnp.append(jnp.tile(jnp.ones(8, jnp.bool_), 7), jnp.zeros(8, jnp.bool_))
+_MASK_CACHE = _make_mask_cache()
