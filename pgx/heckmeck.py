@@ -47,8 +47,8 @@ class Heckmeck(core.Env):
         self._game = Game()
 
     def _init(self, key: PRNGKey) -> State:
-        current_player = jnp.int32(jax.random.bernoulli(key)) # TODO; 3-way random?
         x = self._game.init(key)
+        current_player = x.color
         return State(current_player=current_player,
                      _x=x,
                      observation=self._game.observe(x),
@@ -58,16 +58,14 @@ class Heckmeck(core.Env):
         assert isinstance(state, State)
         x = self._game.step(state._x, action, key)
         state = state.replace(  # type: ignore
-            current_player=1 - state.current_player,
+            current_player=x.color,
             _x=x,
         )
         assert isinstance(state, State)
         legal_action_mask = self._game.legal_action_mask(state._x)
         terminated = self._game.is_terminal(state._x)
         rewards = self._game.rewards(state._x)
-        #should_flip = state.current_player != state._x.color
-        #rewards = jax.lax.select(should_flip, jnp.flip(rewards), rewards)
-        rewards = jnp.roll(rewards, state.current_player)
+        rewards = jnp.roll(rewards, -state.current_player)
         rewards = jax.lax.select(terminated, rewards, jnp.zeros(3, jnp.float32))
         return state.replace(  # type: ignore
             legal_action_mask=legal_action_mask,

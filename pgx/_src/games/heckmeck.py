@@ -68,7 +68,7 @@ WORM_VALS = jnp.int32([
 _DICE_VALS = jnp.int32([5, 1, 2, 3, 4, 5])
 
 def _roll(dice_taken: Array, key: PRNGKey) -> Array:
-    assert isinstance(key, Array)
+    #assert isinstance(key, Array)
     roll = jax.random.randint(key, shape=(8), minval=1, maxval=7, dtype=jnp.int32)
     roll_kept = roll * _DICE_MASK[dice_taken.sum()]
     return jnp.int32([
@@ -109,10 +109,6 @@ def _step_take_and_stop(die, state: GameState, action: Array, key: PRNGKey) -> G
     )
 
 
-def _step_steal(from_player, state: GameState, action: Array, key: PRNGKey) -> GameState:
-    return state  # TODO
-
-
 def _step_bust(state: GameState, action: Array, key: PRNGKey) -> GameState:
     assert isinstance(key, Array)
 
@@ -150,18 +146,21 @@ class Game:
     def step(self, state: GameState, action: Array, key: PRNGKey) -> GameState:
         return jax.lax.switch(action,
           [
+             # Actions 0 - 5: Take and roll
              functools.partial(_step_take_and_roll, 0),
              functools.partial(_step_take_and_roll, 1),
              functools.partial(_step_take_and_roll, 2),
              functools.partial(_step_take_and_roll, 3),
              functools.partial(_step_take_and_roll, 4),
-             functools.partial(_step_take_and_stop, 5),
+             functools.partial(_step_take_and_roll, 5),
+             # Actions 6 - 11: Take and stop
              functools.partial(_step_take_and_stop, 0),
              functools.partial(_step_take_and_stop, 1),
              functools.partial(_step_take_and_stop, 2),
              functools.partial(_step_take_and_stop, 3),
              functools.partial(_step_take_and_stop, 4),
              functools.partial(_step_take_and_stop, 5),
+             # Action 12: Bust
              _step_bust,
              # TODO: Steal from 1 and 2.
           ],
@@ -217,6 +216,8 @@ class Game:
             can_take_4 & (total_already + state.dice_rolled[0] * 4 >= smallest_grill_value) & has_worm_already,
             can_take_5 & (total_already + state.dice_rolled[0] * 5 >= smallest_grill_value) & has_worm_already,
         ])
+
+        # Busting is legal exactly when all other moves are illegal.
         return jnp.hstack([legal_moves, (~legal_moves).all()])
 
 

@@ -78,6 +78,7 @@ def forward_fn(x, is_eval=False):
 
 
 forward = hk.without_apply_rng(hk.transform_with_state(forward_fn))
+# forward = hk.transform_with_state(forward_fn)
 optimizer = optax.adam(learning_rate=config.learning_rate)
 
 

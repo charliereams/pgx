@@ -25,6 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 import mctx
 import pgx
+import pgx.heckmeck as Heckmeck
 from omegaconf import OmegaConf
 from pgx.g_hex import black, white
 from pydantic import BaseModel
@@ -123,7 +124,7 @@ class RandomAgent(Agent):
     def getAction(self, key, state):
         action_i = None
         while action_i is None or not state.legal_action_mask[0][action_i]:
-            action_i = random.randint(0, len(state.legal_action_mask[0]))
+            action_i = random.randint(0, len(state.legal_action_mask[0]) - 1)
         return jnp.int32([action_i])
 
 
@@ -258,11 +259,40 @@ def load_from_checkpoint(path):
       ckpt = pickle.load(f)
       return ckpt["config"], ckpt["model"]
 
-
 def readable_domineering_board(state):
   board = state._x.board[0]
   return jax.lax.select(state.current_player[0] == 0, board, board.transpose())
 
+
+HECKMECK_TILE_VALS = jnp.int32([
+    0,
+    21, 22, 23, 24,
+    25, 26, 27, 28,
+    29, 30, 31, 32,
+    33, 34, 35, 36,])
+
+HECKMECK_WORM_VALS = jnp.int32([
+    0,
+    1, 1, 1, 1,
+    2, 2, 2, 2,
+    3, 3, 3, 3,
+    4, 4, 4, 4])
+
+_HECKMECK_ACTION_NAMES = [
+    "Took worms and kept rolling",
+    "Took 1s and kept rolling",
+    "Took 2s and kept rolling",
+    "Took 3s and kept rolling",
+    "Took 4s and kept rolling",
+    "Took 5s and kept rolling",
+    "Took worms and ended turn",
+    "Took 1s and ended turn",
+    "Took 2s and ended turn",
+    "Took 3s and ended turn",
+    "Took 4s and ended turn",
+    "Took 5s and ended turn",
+    "Busted",
+]
 
 if __name__ == "__main__":
     tourney_conf_dict = OmegaConf.from_cli()
@@ -278,8 +308,8 @@ if __name__ == "__main__":
     #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
     #config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
     #config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt")
-    model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
-    model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=1, max_num_considered_actions=2), config2, model2)
+    #model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
+    #model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=1, max_num_considered_actions=2), config2, model2)
 
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
@@ -288,12 +318,11 @@ if __name__ == "__main__":
     print("\n\nLet's play!\n\n\n")
 
     def run_game(game_num, agents):
-        root_key = jax.random.PRNGKey(tourney_config.seed ^ game_num)
-        key, subkey = jax.random.split(root_key)
-        keys = jax.random.split(subkey, 1)  # Batch size must be 1.
-        state: pgx.State = init_fn(keys)
+        key = jax.random.PRNGKey(tourney_config.seed ^ game_num)
+        key, subkey = jax.random.split(key)
+        state: pgx.State = init_fn(jax.random.split(subkey, 1))
 
-        p1_to_play = True
+        turn_num = 1
         while True:
             if tourney_config.env_id == "domineering":
               print("   abcdefgh")
@@ -309,42 +338,55 @@ if __name__ == "__main__":
               print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
               print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
               print("")
+            elif tourney_config.env_id == "heckmeck":
+              print(f"To play: P{state.current_player[0]}")
+              print(f"Grill: {state._x.grill[0] * HECKMECK_TILE_VALS}")
+              print(f"Player stacks: P0={state._x.stacks[0][0]}")
+              print(f"               P1={state._x.stacks[0][1]}")
+              print(f"               P2={state._x.stacks[0][2]}")
+              print(f"Dice taken:  {state._x.dice_taken[0]}")
+              print(f"Dice rolled: {state._x.dice_rolled[0]}")
 
             if state.terminated.all():
-                print("Game over!")
+                print(f"Game over! winner={state._x.winner} rewards={state.rewards}")
                 return state._x.winner
 
-            agent = agents[0 if p1_to_play else 1]
-            print(f"{agent.getName()} to play...", flush=True)
+            agent = agents[state.current_player[0]]
+            print(f"Turn {turn_num}: {agent.getName()} to play...", flush=True)
             action = agent.getAction(key, state)
             if tourney_config.env_id == "domineering":
                 print(f"{agent.getName()} played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}\n")
             if tourney_config.env_id == "g_hex":
                 print(f"{agent.getName()} played the {1 + (action[0] % 10)} on triangle {action[0] // 10}\n")
-            state = step_fn(state, action)
-            p1_to_play = not p1_to_play
+            if tourney_config.env_id == "heckmeck":
+                print(f"{agent.getName()} took action {action[0]}: {_HECKMECK_ACTION_NAMES[action[0]]}\n")
+
+            key, subkey = jax.random.split(key)
+            state = step_fn(state, action, jax.random.split(subkey, 1))
+            turn_num += 1
 
 
     agents = [
-        #RandomAgent(),
+        RandomAgent(),
+        RandomAgent(),
+        RandomAgent(),
         #KeyboardAgent(tourney_config.env_id),
-        model_agent_1,
-        model_agent_2,
+        #model_agent_1,
+        #model_agent_2,
     ]
-    wins = np.array([0, 0])
+    wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
         agent_1_first = (game_num % 2) == 0
-        game_agents = [agents[0], agents[1]] if agent_1_first else [agents[1], agents[0]]
+        rotation_pos = game_num % len(agents)
+        game_agents = agents[rotation_pos:] + agents[:rotation_pos]
         print(f"Game {game_num} of {tourney_config.games}: {game_agents[0].getName()} vs {game_agents[1].getName()}")
 
         winner = run_game(game_num, game_agents)
-        if winner == (0 if agent_1_first else 1):
-            wins[0] += 1
-        elif winner == (1 if agent_1_first else 0):
-            wins[1] += 1
+        for w in range(0, len(agents)):
+            if (winner + rotation_pos) % len(agents) == w:
+              wins[w] += 1
         win_rates = 100 * wins / (1 + game_num)
         print(f"""#######################################################################
-                  Win rates after {1 + game_num} {'game' if game_num == 0 else 'games'}:
-                    {agents[0].getName():>20}: {win_rates[0]:6.2f}% ({wins[0]})
-                    {agents[1].getName():>20}: {win_rates[1]:6.2f}% ({wins[1]})
-               """, flush=True)
+                  Win rates after {1 + game_num} {'game' if game_num == 0 else 'games'}:""")
+        for w in range(0, len(agents)):
+            print(f"       {agents[w].getName():>20}: {win_rates[w]:6.2f}% ({wins[w]})", flush=True)

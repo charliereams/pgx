@@ -13,6 +13,7 @@ BaselineModelId = Literal[
     "g_hex_v0",
     "gardner_chess_v0",
     "go_9x9_v0",
+    "heckmeck_v0",
     "hex_v0",
     "othello_v0",
     "minatar-asterix_v0",
@@ -33,6 +34,15 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
         "othello_v0",
     ):
         return _make_az_baseline_model(model_id, download_dir)
+    elif model_id == "heckmeck_v0":
+        return _make_untrained_baseline_model(
+           model_args = {
+            "num_actions": 13,
+            "num_channels": 128,
+            "num_layers": 6,
+            "resnet_v2": True,
+          },
+          shape = (3, 3, 16, 29))
     elif model_id == "g_hex_v0":
         return _make_untrained_baseline_model(
            model_args = {
