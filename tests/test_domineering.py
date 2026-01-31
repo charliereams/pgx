@@ -182,5 +182,5 @@ def test_api():
     import pgx
 
     environment = pgx.make("domineering")
-    #pgx.api_test(environment, 3, use_key=False)
-    #pgx.api_test(environment, 3, use_key=True)
+    pgx.api_test(environment, 3, use_key=False)
+    pgx.api_test(environment, 3, use_key=True)
