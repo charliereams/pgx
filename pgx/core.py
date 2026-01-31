@@ -50,6 +50,7 @@ EnvId = Literal[
     "g_hex",
     "go_9x9",
     "go_19x19",
+    "heckmeck",
     "hex",
     "kuhn_poker",
     "leduc_holdem",
@@ -379,6 +380,10 @@ def make(env_id: EnvId):  # noqa: C901
         from pgx.go import Go
 
         return Go(size=19, komi=7.5)
+    elif env_id == "heckmeck":
+        from pgx.heckmeck import Heckmeck
+
+        return Heckmeck()
     elif env_id == "hex":
         from pgx.hex import Hex
 
