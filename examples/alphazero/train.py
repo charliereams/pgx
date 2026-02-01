@@ -338,13 +338,15 @@ if __name__ == "__main__":
 
         # Shuffle samples and make minibatches
         samples = jax.device_get(samples)  # (#devices, batch, max_num_steps, ...)
-        print(f"samples.shape={samples.obs.shape}")
+        print(f"samples.obs.shape={samples.obs.shape}")
         frames += samples.obs.shape[0] * samples.obs.shape[1] * samples.obs.shape[2]
         samples = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), samples)
-        print(f"samples.shape={samples.obs.shape}")
+        print(f"samples.obs.shape={samples.obs.shape}")
         rng_key, subkey = jax.random.split(rng_key)
         ixs = jax.random.permutation(subkey, jnp.arange(samples.obs.shape[0]))
-        samples = jax.tree_util.tree_map(lambda x: x[ixs], samples)  # shuffle
+        print(f"       ixs.shape={ixs.shape}")
+        #samples = jax.tree_util.tree_map(lambda x: x[ixs], samples)  # shuffle
+        print(f"samples.obs.shape={samples.obs.shape}")
         num_updates = samples.obs.shape[0] // config.training_batch_size
         minibatches = jax.tree_util.tree_map(
             lambda x: x.reshape((num_updates, num_devices, -1) + x.shape[1:]), samples
