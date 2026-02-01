@@ -20,6 +20,7 @@ from pgx._src.games.heckmeck import Game, GameState
 from pgx._src.struct import dataclass
 from pgx._src.types import Array, PRNGKey
 
+_TILE_COUNT = 8
 
 @dataclass
 class State(core.State):
@@ -29,7 +30,7 @@ class State(core.State):
     rewards: Array = jnp.float32([0.0, 0.0, 0.0])
     terminated: Array = jnp.bool_(False)
     truncated: Array = jnp.bool_(False)
-    observation: Array = jnp.ones((3, 16, 29), dtype=jnp.int32)
+    observation: Array = jnp.ones((3, _TILE_COUNT, _TILE_COUNT + 13), dtype=jnp.int32)
     legal_action_mask: Array = jnp.ones(13, dtype=jnp.bool_)
     _step_count: Array = jnp.int32(0)
     _x: GameState = GameState()

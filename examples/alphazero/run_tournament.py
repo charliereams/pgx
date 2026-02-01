@@ -27,7 +27,7 @@ import mctx
 import pgx
 import pgx.heckmeck as Heckmeck
 from omegaconf import OmegaConf
-from pgx.g_hex import black, white
+from pgx.g_hex import black
 from pydantic import BaseModel
 from network import AZNet
 from abc import ABC, abstractmethod
@@ -65,6 +65,79 @@ class MctsConfig(NamedTuple):
     num_simulations: int = 30
     max_num_considered_actions: int = 16
 
+
+class Cli(ABC):
+    @abstractmethod
+    def getActionId(self):
+        pass
+
+    @abstractmethod
+    def display(self, state):
+        pass
+
+
+class DomineeringCli(Cli):
+    def getActionId(self):
+        square_code = input("Move: ")
+        col = ord(square_code[0]) - ord('a')
+        row = int(square_code[1]) - 1
+        if col < 0 or col >= 8 or row < 0 or row >= 8:
+            return None
+        return row * 8 + col
+
+    def display(self, state):
+        print("   abcdefgh")
+        print("\n".join(
+              f"{idx+1} |" + "".join("·" if cell else "■" for cell in row) + "|"
+              for idx, row in enumerate(readable_domineering_board(state))
+        ))
+        print("")
+
+
+class GHexCli(Cli):
+    def getActionId(self):
+        name = input("Move: ")
+        m = re.fullmatch("([0-9]+) on ([0-9]+)", name)
+        if m is None:
+            return None
+        tile = int(m.group(1))
+        triangle = int(m.group(2))
+        return black(tile, triangle)
+
+    def display(self, state):
+        _TILE_VAL = jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=jnp.int32)
+        print(env.pretty_game(state))
+        print("")
+        print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
+        print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
+        print("")
+
+
+#class HeckmeckCli(Cli):
+#    def getActionId(self):
+#
+#    def display(self, state):
+#        print(f"To play: P{state.current_player[0]}")
+#        print(f"Grill: {state._x.grill[0] * HECKMECK_TILE_VALS}")
+#        print(f"Player stacks: P0={state._x.stacks[0][0]}")
+#        print(f"               P1={state._x.stacks[0][1]}")
+#        print(f"               P2={state._x.stacks[0][2]}")
+#        print(f"Dice taken:  {state._x.dice_taken[0]}")
+#        print(f"Dice rolled: {state._x.dice_rolled[0]}")
+
+
+def GetCli(env_id) -> Cli:
+    match env_id:
+        case "domineering":
+            return DomineeringCli()
+        case "ghex":
+            return GHexCli()
+        #case "heckmeck":
+        #    return HeckmeckCli()
+        case _:
+            raise f"No CLI support for f{env_id}"
+
+
 class Agent(ABC):
     @abstractmethod
     def getName(self):
@@ -76,8 +149,8 @@ class Agent(ABC):
 
 
 class KeyboardAgent(Agent):
-    def __init__(self, env_id):
-        self.env_id = env_id
+    def __init__(self, cli):
+        self.cli = cli
 
     def getName(self):
         return "Human"
@@ -85,36 +158,12 @@ class KeyboardAgent(Agent):
     def getAction(self, key, state):
         action_i = None
         while action_i is None or not state.legal_action_mask[0][action_i]:
-            if self.env_id == "domineering":
-                action_i = self._action_from_square(input("move="))
-            elif self.env_id == "g_hex":
-                action_i = self._action_from_ghex_name(input("move="))
-            else:
-                raise Exception(f"Keyboard parsing not implemented for {self.env_id}")
-            #print(f"action_i={action_i} legal={state.legal_action_mask[0][action_i]}")
+            try:
+                action_i = self.cli.getActionId()
+            except Exception as e:
+                print(f"fail: {e}")
+                action_i = None
         return jnp.int32([action_i])
-
-    def _action_from_square(self, square_code):
-        try:
-            col = ord(square_code[0]) - ord('a')
-            row = int(square_code[1]) - 1
-            if col < 0 or col >= 8 or row < 0 or row >= 8:
-                return None
-            return row * 8 + col
-        except Exception as e:
-            return None
-
-    def _action_from_ghex_name(self, name):
-        try:
-            m = re.fullmatch("([0-9]+) on ([0-9]+)", name)
-            if m is None:
-                return None
-            tile = int(m.group(1))
-            triangle = int(m.group(2))
-            return black(tile, triangle)
-        except Exception as e:
-            print(e)
-            return None
 
 
 class RandomAgent(Agent):
@@ -264,19 +313,33 @@ def readable_domineering_board(state):
   return jax.lax.select(state.current_player[0] == 0, board, board.transpose())
 
 
+#HECKMECK_TILE_VALS = jnp.int32([
+#    0,
+#    21, 22, 23, 24,
+#    25, 26, 27, 28,
+#    29, 30, 31, 32,
+#    33, 34, 35, 36,])
+
+#HECKMECK_WORM_VALS = jnp.int32([
+#    0,
+#    1, 1, 1, 1,
+#    2, 2, 2, 2,
+#    3, 3, 3, 3,
+#    4, 4, 4, 4])
+
 HECKMECK_TILE_VALS = jnp.int32([
     0,
-    21, 22, 23, 24,
-    25, 26, 27, 28,
-    29, 30, 31, 32,
-    33, 34, 35, 36,])
+    11, 12,
+    13, 14,
+    15, 16,
+    17, 18,
+])
 
 HECKMECK_WORM_VALS = jnp.int32([
     0,
-    1, 1, 1, 1,
-    2, 2, 2, 2,
-    3, 3, 3, 3,
-    4, 4, 4, 4])
+    1, 1, 2, 2,
+    3, 3, 4, 4,
+])
 
 _HECKMECK_ACTION_NAMES = [
     "Took worms and kept rolling",
@@ -298,6 +361,8 @@ if __name__ == "__main__":
     tourney_conf_dict = OmegaConf.from_cli()
     tourney_config: TourneyConfig = TourneyConfig(**tourney_conf_dict)
     print(tourney_config)
+
+    cli = GetCli(tourney_config.env_id)
 
     devices = jax.local_devices()
 
@@ -324,28 +389,7 @@ if __name__ == "__main__":
 
         turn_num = 1
         while True:
-            if tourney_config.env_id == "domineering":
-              print("   abcdefgh")
-              print("\n".join(
-                  f"{idx+1} |" + "".join("·" if cell else "■" for cell in row) + "|"
-                  for idx, row in enumerate(readable_domineering_board(state))
-              ))
-              print("")
-            elif tourney_config.env_id == "g_hex":
-              _TILE_VAL = jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=jnp.int32)
-              print(env.pretty_game(state))
-              print("")
-              print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
-              print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
-              print("")
-            elif tourney_config.env_id == "heckmeck":
-              print(f"To play: P{state.current_player[0]}")
-              print(f"Grill: {state._x.grill[0] * HECKMECK_TILE_VALS}")
-              print(f"Player stacks: P0={state._x.stacks[0][0]}")
-              print(f"               P1={state._x.stacks[0][1]}")
-              print(f"               P2={state._x.stacks[0][2]}")
-              print(f"Dice taken:  {state._x.dice_taken[0]}")
-              print(f"Dice rolled: {state._x.dice_rolled[0]}")
+            cli.display(state)
 
             if state.terminated.all():
                 print(f"Game over! winner={state._x.winner} rewards={state.rewards}")
@@ -368,15 +412,14 @@ if __name__ == "__main__":
 
     agents = [
         RandomAgent(),
-        RandomAgent(),
-        RandomAgent(),
-        #KeyboardAgent(tourney_config.env_id),
+        #RandomAgent(),
+        #RandomAgent(),
+        KeyboardAgent(cli),
         #model_agent_1,
         #model_agent_2,
     ]
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
-        agent_1_first = (game_num % 2) == 0
         rotation_pos = game_num % len(agents)
         game_agents = agents[rotation_pos:] + agents[:rotation_pos]
         print(f"Game {game_num} of {tourney_config.games}: {game_agents[0].getName()} vs {game_agents[1].getName()}")

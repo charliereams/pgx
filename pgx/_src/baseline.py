@@ -42,7 +42,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
             "num_layers": 6,
             "resnet_v2": True,
           },
-          shape = (3, 3, 16, 29))
+          shape = (1, 3, 8, 21))  # 29
     elif model_id == "g_hex_v0":
         return _make_untrained_baseline_model(
            model_args = {
