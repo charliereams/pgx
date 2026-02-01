@@ -116,7 +116,6 @@ class SelfplayOutput(NamedTuple):
     terminated: jnp.ndarray
     action_weights: jnp.ndarray
     discount: jnp.ndarray
-    key: jnp.ndarray
 
 
 @jax.pmap
@@ -154,7 +153,6 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
             reward=state.rewards[jnp.arange(state.rewards.shape[0]), actor],
             terminated=state.terminated,
             discount=discount,
-            key=key,  # TODO: is this the *right* key?
         )
 
     # Run selfplay for max_num_steps by batch
@@ -172,7 +170,6 @@ class Sample(NamedTuple):
     policy_tgt: jnp.ndarray
     value_tgt: jnp.ndarray
     mask: jnp.ndarray
-    key: jnp.ndarray
 
 
 @jax.pmap
@@ -200,13 +197,12 @@ def compute_loss_input(data: SelfplayOutput) -> Sample:
         policy_tgt=data.action_weights,
         value_tgt=value_tgt,
         mask=value_mask,
-        key=data.key,
     )
 
 
 def loss_fn(model_params, model_state, samples: Sample):
     (logits, value), model_state = forward.apply(
-        model_params, model_state, samples.key, samples.obs, is_eval=False
+        model_params, model_state, None, samples.obs, is_eval=False
     )
 
     policy_loss = optax.softmax_cross_entropy(logits, samples.policy_tgt)
@@ -338,15 +334,11 @@ if __name__ == "__main__":
 
         # Shuffle samples and make minibatches
         samples = jax.device_get(samples)  # (#devices, batch, max_num_steps, ...)
-        print(f"samples.obs.shape={samples.obs.shape}")
         frames += samples.obs.shape[0] * samples.obs.shape[1] * samples.obs.shape[2]
         samples = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), samples)
-        print(f"samples.obs.shape={samples.obs.shape}")
         rng_key, subkey = jax.random.split(rng_key)
         ixs = jax.random.permutation(subkey, jnp.arange(samples.obs.shape[0]))
-        print(f"       ixs.shape={ixs.shape}")
-        #samples = jax.tree_util.tree_map(lambda x: x[ixs], samples)  # shuffle
-        print(f"samples.obs.shape={samples.obs.shape}")
+        samples = jax.tree_util.tree_map(lambda x: x[ixs], samples)  # shuffle
         num_updates = samples.obs.shape[0] // config.training_batch_size
         minibatches = jax.tree_util.tree_map(
             lambda x: x.reshape((num_updates, num_devices, -1) + x.shape[1:]), samples
