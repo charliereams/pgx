@@ -158,9 +158,9 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
         )
 
     # Run selfplay for max_num_steps by batch
-    rng_key, subkey = jax.random.split(rng_key)
-    init_keys = jax.random.split(subkey, batch_size)
-    state = jax.vmap(env.init)(init_keys)
+    rng_key, sub_key = jax.random.split(rng_key)
+    keys = jax.random.split(sub_key, batch_size)
+    state = jax.vmap(env.init)(keys)
     key_seq = jax.random.split(rng_key, config.max_num_steps)
     _, data = jax.lax.scan(step_fn, state, key_seq)
 
@@ -338,8 +338,10 @@ if __name__ == "__main__":
 
         # Shuffle samples and make minibatches
         samples = jax.device_get(samples)  # (#devices, batch, max_num_steps, ...)
+        print(f"samples.shape={samples.obs.shape}")
         frames += samples.obs.shape[0] * samples.obs.shape[1] * samples.obs.shape[2]
         samples = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), samples)
+        print(f"samples.shape={samples.obs.shape}")
         rng_key, subkey = jax.random.split(rng_key)
         ixs = jax.random.permutation(subkey, jnp.arange(samples.obs.shape[0]))
         samples = jax.tree_util.tree_map(lambda x: x[ixs], samples)  # shuffle
