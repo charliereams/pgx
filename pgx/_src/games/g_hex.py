@@ -127,6 +127,7 @@ class Game:
       else:
           return f"W{abs(state.board[0][i])}"
 
+
     def pretty_game(self, state: GameState):
       return f"""
            ____________
@@ -168,20 +169,10 @@ class Game:
             winner=jax.lax.select(state.tiles.sum() > 1, -1, _WINNER_BY_SIGN[1 + jnp.sign(golden_sum)])
         )
 
+
     def observe(self, state: GameState, color: Optional[Array] = None) -> Array:
         if color is None:
             color = state.color
-
-        #tile_order = jnp.array([[0, 1], [1, 0]], dtype=jnp.int32)
-        #tile_repr = state.tiles[tile_order[color]] * _TILE_VAL
-        #return jnp.vstack([state.board[:21] * (1 - 2 * color),
-        #                   jnp.pad(tile_repr, ((0, 0), (0, 11)))])
-
-        #return jnp.vstack([
-        #     state.board[:21],
-        #     jnp.pad(state.tiles * _TILE_VAL, ((0, 0), (0, 11))),
-        #     jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
-        #   ])
 
         virtual_up =   jnp.zeros(24, dtype=jnp.int32).at[1].set(1) .at[3].set(color)
         virtual_down = jnp.zeros(24, dtype=jnp.int32).at[1].set(-1).at[3].set(color)
@@ -206,26 +197,23 @@ class Game:
           [virtual_up,   fstack[16], fstack[17], fstack[18], fstack[19],   fstack[20],  virtual_up],
         ])
 
-        #tile_features = jnp.concatenate([state.tiles[0] * _TILE_VAL, state.tiles[1] * -_TILE_VAL])
-        #return jnp.vstack([state.board[:21],
-        #                   (state.board[:21] == 0) * jnp.transpose(jnp.broadcast_to(tile_features, (21, 20))),
-        #                   jnp.ones(21, dtype=jnp.int32) * (1 - 2 * color),
-        #                  ])
 
     def legal_action_mask(self, state: GameState) -> Array:
-        # tile_available = jnp.concatenate([state.tiles[0] * (1 - state.color), state.tiles[1] * state.color]) > 0
         tile_available = state.tiles[state.color]
         def can_play(bl):
             return tile_available & bl
         return jax.vmap(can_play)(state.board[:21] == 0).flatten()
 
+
     def is_terminal(self, state: GameState) -> Array:
         return state.tiles.sum() == 0
 
+
     def rewards(self, state: GameState) -> Array:
-        golden_sum = _golden_sum(state.board)
+        #golden_sum = _golden_sum(state.board)
         return jax.lax.select(
             state.winner >= 0,
-            jnp.float32([0, 0]).at[state.winner].set(golden_sum).at[1 - state.winner].set(-golden_sum),
+            #np.tanh(.3 * jnp.float32([0, 0]).at[state.winner].set(golden_sum).at[1 - state.winner].set(-golden_sum)), # Asymmetric squash of the full range.
+            jnp.float32([-1, -1]).at[state.winner].set(1),
             jnp.zeros(2, jnp.float32),
         )
