@@ -126,11 +126,11 @@ class GHexCli(Cli):
 #        print(f"Dice rolled: {state._x.dice_rolled[0]}")
 
 
-def GetCli(env_id) -> Cli:
+def GetCli(env_id: pgx.EnvId) -> Cli:
     match env_id:
         case "domineering":
             return DomineeringCli()
-        case "ghex":
+        case "g_hex":
             return GHexCli()
         #case "heckmeck":
         #    return HeckmeckCli()
@@ -366,15 +366,15 @@ if __name__ == "__main__":
 
     devices = jax.local_devices()
 
-    config1, model1 = load_from_checkpoint("domineering_20260131044700/000100.ckpt")
-    config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
+    #config1, model1 = load_from_checkpoint("domineering_20260131044700/000100.ckpt")
+    #config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
     #config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
     #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
     #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
-    #config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
-    #config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt")
-    #model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
-    #model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=1, max_num_considered_actions=2), config2, model2)
+    config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
+    config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt") # load_from_checkpoint("g_hex_20260203175824/001250.ckpt")
+    model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
+    model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config2, model2)
 
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
@@ -382,12 +382,19 @@ if __name__ == "__main__":
 
     print("\n\nLet's play!\n\n\n")
 
-    def run_game(game_num, agents):
+    def run_game(game_num, agents, start_depth):
         key = jax.random.PRNGKey(tourney_config.seed ^ game_num)
         key, subkey = jax.random.split(key)
         state: pgx.State = init_fn(jax.random.split(subkey, 1))
 
-        turn_num = 1
+        random.seed(77659 ^ (game_num // len(agents)))
+        for move_i in range(0, start_depth):
+            action_i = None
+            while action_i is None or not state.legal_action_mask[0][action_i]:
+                action_i = random.randint(0, len(state.legal_action_mask[0]) - 1)
+            state = step_fn(state, jnp.int32([action_i]), jax.random.split(subkey, 1))
+
+        turn_num = 1 + start_depth
         while True:
             cli.display(state)
 
@@ -411,12 +418,12 @@ if __name__ == "__main__":
 
 
     agents = [
-        RandomAgent(),
         #RandomAgent(),
         #RandomAgent(),
-        KeyboardAgent(cli),
-        #model_agent_1,
-        #model_agent_2,
+        #RandomAgent(),
+        #KeyboardAgent(cli),
+        model_agent_1,
+        model_agent_2,
     ]
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
@@ -424,7 +431,7 @@ if __name__ == "__main__":
         game_agents = agents[rotation_pos:] + agents[:rotation_pos]
         print(f"Game {game_num} of {tourney_config.games}: {game_agents[0].getName()} vs {game_agents[1].getName()}")
 
-        winner = run_game(game_num, game_agents)
+        winner = run_game(game_num, game_agents, 0 if game_num < len(agents) else (1 if game_num < 100 else 2))
         for w in range(0, len(agents)):
             if (winner + rotation_pos) % len(agents) == w:
               wins[w] += 1

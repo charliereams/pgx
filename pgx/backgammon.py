@@ -29,7 +29,7 @@ FALSE = jnp.bool_(False)
 @dataclass
 class State(core.State):
     current_player: Array = jnp.int32(0)
-    observation: Array = jnp.zeros(34, dtype=jnp.int32)
+    observation: Array = jnp.int32(jnp.zeros(34, dtype=jnp.int32))
     rewards: Array = jnp.float32([0.0, 0.0])
     terminated: Array = FALSE
     truncated: Array = FALSE
@@ -134,11 +134,11 @@ def _observe(state: State, player_id: Array) -> Array:
     playable_dice_count_vec: Array = _to_playable_dice_count(
         state._playable_dice
     )  # 6 dim vec which represents the count of playable die.
-    return jax.lax.cond(
+    return jnp.int32([jax.lax.cond(
         player_id == state.current_player,
         lambda: jnp.concatenate((board, playable_dice_count_vec), axis=None),  # type: ignore
         lambda: jnp.concatenate((board, jnp.zeros(6, dtype=jnp.int32)), axis=None),  # type: ignore
-    )
+    )])
 
 
 def _to_playable_dice_count(playable_dice: Array) -> Array:

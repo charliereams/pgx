@@ -9,6 +9,7 @@ from pgx._src.utils import _download
 
 BaselineModelId = Literal[
     "animal_shogi_v0",
+    "backgammon_v0",
     "domineering_v0",
     "g_hex_v0",
     "gardner_chess_v0",
@@ -34,6 +35,15 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
         "othello_v0",
     ):
         return _make_az_baseline_model(model_id, download_dir)
+    elif model_id == "backgammon_v0":
+        return _make_untrained_baseline_model(
+           model_args = {
+            "num_actions": 6 * 26,
+            "num_channels": 1,
+            "num_layers": 6,
+            "resnet_v2": True,
+          },
+          shape = (1, 34, 1))
     elif model_id == "heckmeck_v0":
         return _make_untrained_baseline_model(
            model_args = {

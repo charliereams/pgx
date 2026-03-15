@@ -304,6 +304,9 @@ def test_observe():
     expected_obs = jnp.concatenate(
         (board, jnp.array([1, 1, 0, 0, 0, 0])), axis=None
     )
+    print(jnp.shape(observe(state, jnp.int32(1))))
+    assert False
+
     assert (observe(state, jnp.int32(1)) == expected_obs).all()
 
     state = make_test_state(
