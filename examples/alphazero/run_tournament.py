@@ -153,7 +153,7 @@ class GHex2Cli(Cli):
 
     def loadModelBasedAgent(self, player_num):
         v_num = player_num % 2
-        config, model = load_from_checkpoint("g_hex2_20260327165407/000300.ckpt" if v_num == 0 else "g_hex2_20260327165407/000050.ckpt")
+        config, model = load_from_checkpoint("g_hex2_20260327165407/000300.ckpt" if v_num == 0 else "g_hex2_20260327165407/000000.ckpt")
         return ModelAgent(f"v{"PRO!" if v_num == 0 else "WEAK"}", "g_hex2", MctsConfig(), config, model)
 
 
@@ -467,9 +467,9 @@ if __name__ == "__main__":
 
     agents = [
         #RandomAgent(),
-        KeyboardAgent(cli),
+        #KeyboardAgent(cli),
         cli.loadModelBasedAgent(0),
-        #cli.loadModelBasedAgent(1),
+        cli.loadModelBasedAgent(1),
     ]
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
