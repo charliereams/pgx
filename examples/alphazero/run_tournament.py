@@ -26,7 +26,8 @@ import numpy as np
 import mctx
 import pgx
 from omegaconf import OmegaConf
-from pgx.g_hex import black, white
+from pgx.g_hex import black
+from pgx.g_hex2 import black2
 from pydantic import BaseModel
 from network import AZNet
 from abc import ABC, abstractmethod
@@ -88,6 +89,8 @@ class KeyboardAgent(Agent):
                 action_i = self._action_from_square(input("move="))
             elif self.env_id == "g_hex":
                 action_i = self._action_from_ghex_name(input("move="))
+            elif self.env_id == "g_hex2":
+                action_i = self._action_from_ghex2_name(input("move="))
             else:
                 raise Exception(f"Keyboard parsing not implemented for {self.env_id}")
             #print(f"action_i={action_i} legal={state.legal_action_mask[0][action_i]}")
@@ -111,6 +114,18 @@ class KeyboardAgent(Agent):
             tile = int(m.group(1))
             triangle = int(m.group(2))
             return black(tile, triangle)
+        except Exception as e:
+            print(e)
+            return None
+
+    def _action_from_ghex2_name(self, name):
+        try:
+            m = re.fullmatch("([0-9]+) on ([0-9]+)", name)
+            if m is None:
+                return None
+            tile = int(m.group(1))
+            triangle = int(m.group(2))
+            return black2(tile, triangle)
         except Exception as e:
             print(e)
             return None
@@ -199,6 +214,11 @@ class ModelAgent(Agent):
             print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
                              for tri_i, tri_row in enumerate(action_weights)]))
             print("")
+        elif self.env_id == "g_hex2":
+            action_weights = policy_output.action_weights.reshape(23, 11)
+            print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+                             for tri_i, tri_row in enumerate(action_weights)]))
+            print("")
 
         return policy_output.action
 
@@ -227,6 +247,11 @@ class ModelAgent(Agent):
                 print("Action weights:")
                 print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
                                  for tri_i, tri_row in enumerate(action_weights)]))
+            #elif debug_g_hex2:
+            #    action_weights = jax.scipy.special.softmax(logits.reshape(23, 11))
+            #    print("Action weights:")
+            #    print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+            #                     for tri_i, tri_row in enumerate(action_weights)]))
             print(f"value={value}")
             return None
 
@@ -250,8 +275,10 @@ class ModelAgent(Agent):
 
 
 def pretty_tiles(tiles):
-  return "  ".join([(f"{val:2}" if tiles[i] else "  ")
-                   for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])])
+  return ("  ".join([(f"{val:2}" if tiles[i] else "  ")
+                   for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]) +
+          (" *" if tiles[11] else "  "))
+
 
 def load_from_checkpoint(path):
   with open(f"checkpoints/{path}", "rb") as f:
@@ -271,15 +298,16 @@ if __name__ == "__main__":
 
     devices = jax.local_devices()
 
-    config1, model1 = load_from_checkpoint("domineering_20260131044700/000100.ckpt")
-    config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
+    config1, model1 = load_from_checkpoint("g_hex_20260323010002/000100.ckpt")
+    config2, model2 = load_from_checkpoint("g_hex_20260327061715/000020.ckpt")
+    #config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
     #config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
     #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
     #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
     #config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
     #config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt")
-    model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
-    model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=1, max_num_considered_actions=2), config2, model2)
+    model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=256), config1, model1)
+    model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=256), config2, model2)
 
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
@@ -309,6 +337,13 @@ if __name__ == "__main__":
               print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
               print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
               print("")
+            elif tourney_config.env_id == "g_hex2":
+              _TILE_VAL = jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20], dtype=jnp.int32)
+              print(env.pretty_game(state))
+              print("")
+              print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
+              print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
+              print("")
 
             if state.terminated.all():
                 print("Game over!")
@@ -319,16 +354,18 @@ if __name__ == "__main__":
             action = agent.getAction(key, state)
             if tourney_config.env_id == "domineering":
                 print(f"{agent.getName()} played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}\n")
-            if tourney_config.env_id == "g_hex":
+            elif tourney_config.env_id == "g_hex":
                 print(f"{agent.getName()} played the {1 + (action[0] % 10)} on triangle {action[0] // 10}\n")
+            elif tourney_config.env_id == "g_hex2":
+                print(f"{agent.getName()} played the {1 + (action[0] % 11)} on triangle {action[0] // 11}\n")
             state = step_fn(state, action)
             p1_to_play = not p1_to_play
 
 
     agents = [
         #RandomAgent(),
-        #KeyboardAgent(tourney_config.env_id),
         model_agent_1,
+        #KeyboardAgent(tourney_config.env_id),
         model_agent_2,
     ]
     wins = np.array([0, 0])
