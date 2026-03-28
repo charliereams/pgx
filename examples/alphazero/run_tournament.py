@@ -152,8 +152,9 @@ class GHex2Cli(Cli):
                        for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20])])
 
     def loadModelBasedAgent(self, player_num):
-        config, model = load_from_checkpoint("g_hex2_20260327165407/000000.ckpt" if (player_num % 2) == 0 else "g_hex2_20260327165407/000300.ckpt")
-        return ModelAgent(f"v{player_num}", "g_hex2", MctsConfig(), config, model)
+        v_num = player_num % 2
+        config, model = load_from_checkpoint("g_hex2_20260327165407/000300.ckpt" if v_num == 0 else "g_hex2_20260327165407/000050.ckpt")
+        return ModelAgent(f"v{"PRO!" if v_num == 0 else "WEAK"}", "g_hex2", MctsConfig(), config, model)
 
 
 #class HeckmeckCli(Cli):
