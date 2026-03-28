@@ -77,20 +77,21 @@ def forward_fn(x, is_eval=False):
     return policy_out, value_out
 
 
-forward = hk.without_apply_rng(hk.transform_with_state(forward_fn))
+forward = hk.transform_with_state(forward_fn)
 optimizer = optax.adam(learning_rate=config.learning_rate)
 
 
-def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.State):
+def recurrent_fn(model, key: jnp.ndarray, action: jnp.ndarray, state: pgx.State):
     # model: params
     # state: embedding
-    del rng_key
     model_params, model_state = model
 
-    current_player = state.current_player
-    state = jax.vmap(env.step)(state, action)
+    step_key, apply_key = jax.random.split(key)
 
-    (logits, value), _ = forward.apply(model_params, model_state, state.observation, is_eval=True)
+    current_player = state.current_player
+    state = jax.vmap(env.step)(state, action, jax.random.split(step_key, len(action)))
+
+    (logits, value), _ = forward.apply(model_params, model_state, apply_key, state.observation, is_eval=True)
     # mask invalid actions
     logits = logits - jnp.max(logits, axis=-1, keepdims=True)
     logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
@@ -123,17 +124,17 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
     batch_size = config.selfplay_batch_size // num_devices
 
     def step_fn(state, key) -> SelfplayOutput:
-        key1, key2 = jax.random.split(key)
+        forward_key, policy_key, init_key = jax.random.split(key, 3)
         observation = state.observation
 
         (logits, value), _ = forward.apply(
-            model_params, model_state, state.observation, is_eval=True
+            model_params, model_state, forward_key, state.observation, is_eval=True
         )
         root = mctx.RootFnOutput(prior_logits=logits, value=value, embedding=state)
 
         policy_output = mctx.gumbel_muzero_policy(
             params=model,
-            rng_key=key1,
+            rng_key=policy_key,
             root=root,
             recurrent_fn=recurrent_fn,
             num_simulations=config.num_simulations,
@@ -142,8 +143,8 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
             gumbel_scale=1.0,  # 0.0 for perfect information games
         )
         actor = state.current_player
-        keys = jax.random.split(key2, batch_size)
-        state = jax.vmap(auto_reset(env.step, env.init))(state, policy_output.action, keys)
+        init_keys = jax.random.split(init_key, batch_size)
+        state = jax.vmap(auto_reset(env.step, env.init))(state, policy_output.action, init_keys)
         discount = -1.0 * jnp.ones_like(value)
         discount = jnp.where(state.terminated, 0.0, discount)
         return state, SelfplayOutput(
@@ -201,7 +202,7 @@ def compute_loss_input(data: SelfplayOutput) -> Sample:
 
 def loss_fn(model_params, model_state, samples: Sample):
     (logits, value), model_state = forward.apply(
-        model_params, model_state, samples.obs, is_eval=False
+        model_params, model_state, None, samples.obs, is_eval=False
     )
 
     policy_loss = optax.softmax_cross_entropy(logits, samples.policy_tgt)
@@ -240,15 +241,16 @@ def evaluate(rng_key, my_model):
 
     def body_fn(val):
         key, state, R = val
+        key, subkey = jax.random.split(key)
         (my_logits, _), _ = forward.apply(
-            my_model_params, my_model_state, state.observation, is_eval=True
+            my_model_params, my_model_state, subkey, state.observation, is_eval=True
         )
         opp_logits, _ = baseline(state.observation)
         is_my_turn = (state.current_player == my_player).reshape((-1, 1))
         logits = jnp.where(is_my_turn, my_logits, opp_logits)
-        key, subkey = jax.random.split(key)
+        key, subkey = jax.random.split(key) # TODO: unnecessary split?
         action = jax.random.categorical(subkey, logits, axis=-1)
-        state = jax.vmap(env.step)(state, action)
+        state = jax.vmap(env.step)(state, action, jax.random.split(subkey, batch_size))
         R = R + state.rewards[jnp.arange(batch_size), my_player]
         return (key, state, R)
 

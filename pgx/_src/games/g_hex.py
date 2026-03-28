@@ -210,10 +210,8 @@ class Game:
 
 
     def rewards(self, state: GameState) -> Array:
-        #golden_sum = _golden_sum(state.board)
         return jax.lax.select(
             state.winner >= 0,
-            #np.tanh(.3 * jnp.float32([0, 0]).at[state.winner].set(golden_sum).at[1 - state.winner].set(-golden_sum)), # Asymmetric squash of the full range.
             jnp.float32([-1, -1]).at[state.winner].set(1),
             jnp.zeros(2, jnp.float32),
         )
