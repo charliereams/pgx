@@ -12,6 +12,7 @@ BaselineModelId = Literal[
     "backgammon_v0",
     "domineering_v0",
     "g_hex_v0",
+    "g_hex2_v0",
     "gardner_chess_v0",
     "go_9x9_v0",
     "heckmeck_v0",
@@ -61,7 +62,16 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
             "num_layers": 6,
             "resnet_v2": True,
           },
-          shape = (3, 4, 7, 24))
+          shape = (1, 4, 7, 4 + 2*10))
+    elif model_id == "g_hex2_v0":
+        return _make_untrained_baseline_model(
+           model_args = {
+            "num_actions": 23 * 11,
+            "num_channels": 256,
+            "num_layers": 6,
+            "resnet_v2": True,
+          },
+          shape = (1, 4, 7, 4 + 2*11))
     elif model_id == "domineering_v0":
         return _make_untrained_baseline_model(
            model_args = {

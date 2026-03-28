@@ -28,6 +28,7 @@ import pgx
 import pgx.heckmeck as Heckmeck
 from omegaconf import OmegaConf
 from pgx.g_hex import black
+from pgx.g_hex2 import black2
 from pydantic import BaseModel
 from network import AZNet
 from abc import ABC, abstractmethod
@@ -175,7 +176,7 @@ def GetCli(env_id: pgx.EnvId) -> Cli:
         case "g_hex":
             return GHexCli()
         case "g_hex2":
-            return GHexCli2()
+            return GHex2Cli()
         #case "heckmeck":
         #    return HeckmeckCli()
         case _:
@@ -294,6 +295,11 @@ class ModelAgent(Agent):
             print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
                              for tri_i, tri_row in enumerate(action_weights)]))
             print("")
+        elif self.env_id == "g_hex2":
+            action_weights = policy_output.action_weights.reshape(23, 11)
+            print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+                             for tri_i, tri_row in enumerate(action_weights)]))
+            print("")
 
         return policy_output.action
 
@@ -322,6 +328,11 @@ class ModelAgent(Agent):
                 print("Action weights:")
                 print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
                                  for tri_i, tri_row in enumerate(action_weights)]))
+            #elif debug_g_hex2:
+            #    action_weights = jax.scipy.special.softmax(logits.reshape(23, 11))
+            #    print("Action weights:")
+            #    print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+            #                     for tri_i, tri_row in enumerate(action_weights)]))
             print(f"value={value}")
             return None
 
