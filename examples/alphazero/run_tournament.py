@@ -62,7 +62,7 @@ class Config(BaseModel):
 
 
 class MctsConfig(NamedTuple):
-    num_simulations: int = 30
+    num_simulations: int = 128
     max_num_considered_actions: int = 16
 
 
@@ -75,6 +75,10 @@ class Cli(ABC):
     def display(self, state):
         pass
 
+    @abstractmethod
+    def loadModelBasedAgent(self, player_num):
+        pass
+
 
 class DomineeringCli(Cli):
     def getActionId(self):
@@ -83,7 +87,7 @@ class DomineeringCli(Cli):
         row = int(square_code[1]) - 1
         if col < 0 or col >= 8 or row < 0 or row >= 8:
             return None
-        return row * 8 + col
+        return row * 7 + col
 
     def display(self, state):
         print("   abcdefgh")
@@ -92,6 +96,11 @@ class DomineeringCli(Cli):
               for idx, row in enumerate(readable_domineering_board(state))
         ))
         print("")
+
+
+    def loadModelBasedAgent(self, player_num):
+        config, model = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
+        return ModelAgent("vDOM", "domineering", MctsConfig(), config, model)
 
 
 class GHexCli(Cli):
@@ -105,12 +114,45 @@ class GHexCli(Cli):
         return black(tile, triangle)
 
     def display(self, state):
-        _TILE_VAL = jnp.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=jnp.int32)
         print(env.pretty_game(state))
         print("")
-        print(f"Black tiles remaining: {pretty_tiles(state._x.tiles[0][0])}")
-        print(f"White tiles remaining: {pretty_tiles(state._x.tiles[0][1])}")
+        print(f"Black tiles remaining: {self._pretty_tiles(state._x.tiles[0][0])}")
+        print(f"White tiles remaining: {self._pretty_tiles(state._x.tiles[0][1])}")
         print("")
+
+    def _pretty_tiles(self, tiles):
+      return "  ".join([(f"{val:2}" if tiles[i] else "  ")
+                       for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])])
+
+    def loadModelBasedAgent(self, player_num):
+        config, model = load_from_checkpoint("g_hex_20260125182112/000100.ckpt" if (player_num % 2) == 0 else "g_hex_20260125222445/000050.ckpt")
+        return ModelAgent(f"v{player_num}", "g_hex", MctsConfig(), config, model)
+
+
+class GHex2Cli(Cli):
+    def getActionId(self):
+        name = input("Move: ")
+        m = re.fullmatch("([0-9]+) on ([0-9]+)", name)  # TODO: allow * as tile
+        if m is None:
+            return None
+        tile = int(m.group(1))
+        triangle = int(m.group(2))
+        return black2(tile, triangle)
+
+    def display(self, state):
+        print(env.pretty_game(state))
+        print("")
+        print(f"Black tiles remaining: {self._pretty_tiles2(state._x.tiles[0][0])}")
+        print(f"White tiles remaining: {self._pretty_tiles2(state._x.tiles[0][1])}")
+        print("")
+
+    def _pretty_tiles2(self, tiles):
+      return "  ".join([(f"{val:2}" if tiles[i] else "  ")
+                       for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20])])
+
+    def loadModelBasedAgent(self, player_num):
+        config, model = load_from_checkpoint("g_hex2_20260327165407/000000.ckpt" if (player_num % 2) == 0 else "g_hex2_20260327165407/000300.ckpt")
+        return ModelAgent(f"v{player_num}", "g_hex2", MctsConfig(), config, model)
 
 
 #class HeckmeckCli(Cli):
@@ -132,6 +174,8 @@ def GetCli(env_id: pgx.EnvId) -> Cli:
             return DomineeringCli()
         case "g_hex":
             return GHexCli()
+        case "g_hex2":
+            return GHexCli2()
         #case "heckmeck":
         #    return HeckmeckCli()
         case _:
@@ -174,6 +218,7 @@ class RandomAgent(Agent):
         action_i = None
         while action_i is None or not state.legal_action_mask[0][action_i]:
             action_i = random.randint(0, len(state.legal_action_mask[0]) - 1)
+        print(f"  Picking randomly! Selected action index {action_i} for no particular reason.")
         return jnp.int32([action_i])
 
 
@@ -299,10 +344,6 @@ class ModelAgent(Agent):
         return policy_output
 
 
-def pretty_tiles(tiles):
-  return "  ".join([(f"{val:2}" if tiles[i] else "  ")
-                   for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])])
-
 def load_from_checkpoint(path):
   with open(f"checkpoints/{path}", "rb") as f:
       ckpt = pickle.load(f)
@@ -366,16 +407,6 @@ if __name__ == "__main__":
 
     devices = jax.local_devices()
 
-    #config1, model1 = load_from_checkpoint("domineering_20260131044700/000100.ckpt")
-    #config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
-    #config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
-    #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
-    #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
-    config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
-    config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt") # load_from_checkpoint("g_hex_20260203175824/001250.ckpt")
-    model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config1, model1)
-    model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=128, max_num_considered_actions=16), config2, model2)
-
     env = pgx.make(tourney_config.env_id)
     init_fn = jax.jit(jax.vmap(env.init))
     step_fn = jax.jit(jax.vmap(env.step))
@@ -387,6 +418,8 @@ if __name__ == "__main__":
         key, subkey = jax.random.split(key)
         state: pgx.State = init_fn(jax.random.split(subkey, 1))
 
+        # Play random moves up to start_depth to determine the initial position.
+        # These must be the same for each minimatch so we divide by the number of agents.
         random.seed(77659 ^ (game_num // len(agents)))
         for move_i in range(0, start_depth):
             action_i = None
@@ -403,13 +436,16 @@ if __name__ == "__main__":
                 return state._x.winner
 
             agent = agents[state.current_player[0]]
-            print(f"Turn {turn_num}: {agent.getName()} to play...", flush=True)
+            print(f"Turn {turn_num}: {agent.getName()} to play because current_player={state.current_player[0]}...", flush=True)
             action = agent.getAction(key, state)
+            # TODO: absorb this into the CLI.
             if tourney_config.env_id == "domineering":
                 print(f"{agent.getName()} played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}\n")
-            if tourney_config.env_id == "g_hex":
+            elif tourney_config.env_id == "g_hex":
                 print(f"{agent.getName()} played the {1 + (action[0] % 10)} on triangle {action[0] // 10}\n")
-            if tourney_config.env_id == "heckmeck":
+            elif tourney_config.env_id == "g_hex2":
+                print(f"{agent.getName()} played the {1 + (action[0] % 11)} on triangle {action[0] // 11}\n")  # TODO: *
+            elif tourney_config.env_id == "heckmeck":
                 print(f"{agent.getName()} took action {action[0]}: {_HECKMECK_ACTION_NAMES[action[0]]}\n")
 
             key, subkey = jax.random.split(key)
@@ -419,22 +455,20 @@ if __name__ == "__main__":
 
     agents = [
         #RandomAgent(),
-        #RandomAgent(),
-        #RandomAgent(),
-        #KeyboardAgent(cli),
-        model_agent_1,
-        model_agent_2,
+        KeyboardAgent(cli),
+        cli.loadModelBasedAgent(0),
+        #cli.loadModelBasedAgent(1),
     ]
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
         rotation_pos = game_num % len(agents)
         game_agents = agents[rotation_pos:] + agents[:rotation_pos]
-        print(f"Game {game_num} of {tourney_config.games}: {game_agents[0].getName()} vs {game_agents[1].getName()}")
+        print(f"Game {game_num} of {tourney_config.games}: {" vs ".join([agent.getName() for agent in game_agents])}")
 
-        winner = run_game(game_num, game_agents, 0 if game_num < len(agents) else (1 if game_num < 100 else 2))
+        winner = run_game(game_num, game_agents, 0)  # TODO: more interesting start depths
         for w in range(0, len(agents)):
             if (winner + rotation_pos) % len(agents) == w:
-              wins[w] += 1
+                wins[w] += 1
         win_rates = 100 * wins / (1 + game_num)
         print(f"""#######################################################################
                   Win rates after {1 + game_num} {'game' if game_num == 0 else 'games'}:""")
