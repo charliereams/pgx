@@ -298,14 +298,12 @@ if __name__ == "__main__":
 
     devices = jax.local_devices()
 
-    config1, model1 = load_from_checkpoint("g_hex_20260323010002/000100.ckpt")
-    config2, model2 = load_from_checkpoint("g_hex_20260327061715/000020.ckpt")
     #config2, model2 = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
     #config2, model2 = load_from_checkpoint("domineering_20260122174624/001100.ckpt")
-    #config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
-    #config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
-    #config1, model1 = load_from_checkpoint("g_hex_20260126043211/000800.ckpt")
-    #config2, model2 = load_from_checkpoint("g_hex_20260126043211/000050.ckpt")
+    config1, model1 = load_from_checkpoint("g_hex_20260125182112/000100.ckpt")
+    config2, model2 = load_from_checkpoint("g_hex_20260125222445/000050.ckpt")
+    #config1, model1 = load_from_checkpoint("g_hex2_20260323010002/000100.ckpt")
+    #config2, model2 = load_from_checkpoint("g_hex2_20260327061715/000020.ckpt")
     model_agent_1 = ModelAgent("v800", tourney_config.env_id, MctsConfig(num_simulations=256), config1, model1)
     model_agent_2 = ModelAgent("v050", tourney_config.env_id, MctsConfig(num_simulations=256), config2, model2)
 
@@ -364,8 +362,8 @@ if __name__ == "__main__":
 
     agents = [
         #RandomAgent(),
-        model_agent_1,
         #KeyboardAgent(tourney_config.env_id),
+        model_agent_1,
         model_agent_2,
     ]
     wins = np.array([0, 0])

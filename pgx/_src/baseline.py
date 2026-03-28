@@ -28,6 +28,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
     if model_id in (
         "animal_shogi_v0",
         "gardner_chess_v0",
+        "g_hex_v0",
         "go_9x9_v0",
         "hex_v0",
         "othello_v0",
