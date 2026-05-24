@@ -80,6 +80,10 @@ class Cli(ABC):
     def loadModelBasedAgent(self, player_num):
         pass
 
+    @abstractmethod
+    def describe_action(self, action) -> str:
+        pass
+
 
 class DomineeringCli(Cli):
     def getActionId(self):
@@ -98,6 +102,9 @@ class DomineeringCli(Cli):
         ))
         print("")
 
+
+    def describe_action(self, action) -> str:
+        return f"played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}"
 
     def loadModelBasedAgent(self, player_num):
         config, model = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
@@ -125,8 +132,12 @@ class GHexCli(Cli):
       return "  ".join([(f"{val:2}" if tiles[i] else "  ")
                        for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])])
 
+    def describe_action(self, action) -> str:
+        return f"played the {1 + (action[0] % 10)} on triangle {action[0] // 10}"
+
     def loadModelBasedAgent(self, player_num):
-        config, model = load_from_checkpoint("g_hex_20260125182112/000100.ckpt" if (player_num % 2) == 0 else "g_hex_20260125222445/000050.ckpt")
+        #config, model = load_from_checkpoint("g_hex_20260125182112/000100.ckpt" if (player_num % 2) == 0 else "g_hex_20260125222445/000050.ckpt")
+        config, model = load_from_checkpoint("g_hex_20260504192940/001740.ckpt")
         return ModelAgent(f"v{player_num}", "g_hex", MctsConfig(), config, model)
 
 
@@ -151,10 +162,42 @@ class GHex2Cli(Cli):
       return "  ".join([(f"{val:2}" if tiles[i] else "  ")
                        for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20])])
 
+    def describe_action(self, action) -> str:
+        return f"played the {1 + (action[0] % 11)} on triangle {action[0] // 11}"  # TODO: *
+
     def loadModelBasedAgent(self, player_num):
         v_num = player_num % 2
         config, model = load_from_checkpoint("g_hex2_20260327165407/000300.ckpt" if v_num == 0 else "g_hex2_20260327165407/000000.ckpt")
         return ModelAgent(f"v{"PRO!" if v_num == 0 else "WEAK"}", "g_hex2", MctsConfig(), config, model)
+
+
+class PigCli(Cli):
+    def getActionId(self):
+        choice = input("Roll again or stop? [r/s]: ").strip().lower()
+        if choice in ("r", "roll", "continue"):
+            return 1
+        if choice in ("s", "stop"):
+            return 0
+        return None
+
+    def display(self, state):
+        totals = state._x.totals[0]
+        last_roll = int(state._x.last_roll[0])
+        turn_total = int(state._x.turn_total[0])
+        current = int(state.current_player[0])
+        pig_out = last_roll == 1
+        print(f"Scores: P0={int(totals[0])}  P1={int(totals[1])}")
+        if pig_out:
+            print(f"Player {current}'s turn: rolled a 1 — pig out! (must stop, turn total {turn_total} is lost)")
+        else:
+            print(f"Player {current}'s turn: last rolled {last_roll}, turn total = {turn_total}")
+        print("")
+
+    def describe_action(self, action) -> str:
+        return "stopped" if action[0] == 0 else "rolled again"
+
+    def loadModelBasedAgent(self, player_num):
+        raise NotImplementedError("No trained Pig model available yet")
 
 
 #class HeckmeckCli(Cli):
@@ -168,6 +211,9 @@ class GHex2Cli(Cli):
 #        print(f"               P2={state._x.stacks[0][2]}")
 #        print(f"Dice taken:  {state._x.dice_taken[0]}")
 #        print(f"Dice rolled: {state._x.dice_rolled[0]}")
+#
+#    def describe_action(self, action) -> str:
+#        return f"took action {action[0]}: {_HECKMECK_ACTION_NAMES[action[0]]}"
 
 
 def GetCli(env_id: pgx.EnvId) -> Cli:
@@ -178,6 +224,8 @@ def GetCli(env_id: pgx.EnvId) -> Cli:
             return GHexCli()
         case "g_hex2":
             return GHex2Cli()
+        case "pig":
+            return PigCli()
         #case "heckmeck":
         #    return HeckmeckCli()
         case _:
@@ -202,8 +250,12 @@ class KeyboardAgent(Agent):
         return "Human"
 
     def getAction(self, key, state):
+        legal = state.legal_action_mask[0]
+        forced = jnp.where(legal)[0]
+        if len(forced) == 1:
+            return jnp.int32([int(forced[0])])
         action_i = None
-        while action_i is None or not state.legal_action_mask[0][action_i]:
+        while action_i is None or not legal[action_i]:
             try:
                 action_i = self.cli.getActionId()
             except Exception as e:
@@ -366,34 +418,6 @@ def readable_domineering_board(state):
   return jax.lax.select(state.current_player[0] == 0, board, board.transpose())
 
 
-#HECKMECK_TILE_VALS = jnp.int32([
-#    0,
-#    21, 22, 23, 24,
-#    25, 26, 27, 28,
-#    29, 30, 31, 32,
-#    33, 34, 35, 36,])
-
-#HECKMECK_WORM_VALS = jnp.int32([
-#    0,
-#    1, 1, 1, 1,
-#    2, 2, 2, 2,
-#    3, 3, 3, 3,
-#    4, 4, 4, 4])
-
-HECKMECK_TILE_VALS = jnp.int32([
-    0,
-    11, 12,
-    13, 14,
-    15, 16,
-    17, 18,
-])
-
-HECKMECK_WORM_VALS = jnp.int32([
-    0,
-    1, 1, 2, 2,
-    3, 3, 4, 4,
-])
-
 _HECKMECK_ACTION_NAMES = [
     "Took worms and kept rolling",
     "Took 1s and kept rolling",
@@ -450,15 +474,7 @@ if __name__ == "__main__":
             agent = agents[state.current_player[0]]
             print(f"Turn {turn_num}: {agent.getName()} to play because current_player={state.current_player[0]}...", flush=True)
             action = agent.getAction(key, state)
-            # TODO: absorb this into the CLI.
-            if tourney_config.env_id == "domineering":
-                print(f"{agent.getName()} played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}\n")
-            elif tourney_config.env_id == "g_hex":
-                print(f"{agent.getName()} played the {1 + (action[0] % 10)} on triangle {action[0] // 10}\n")
-            elif tourney_config.env_id == "g_hex2":
-                print(f"{agent.getName()} played the {1 + (action[0] % 11)} on triangle {action[0] // 11}\n")  # TODO: *
-            elif tourney_config.env_id == "heckmeck":
-                print(f"{agent.getName()} took action {action[0]}: {_HECKMECK_ACTION_NAMES[action[0]]}\n")
+            print(f"{agent.getName()} {cli.describe_action(action)}\n")
 
             key, subkey = jax.random.split(key)
             state = step_fn(state, action, jax.random.split(subkey, 1))
@@ -466,10 +482,10 @@ if __name__ == "__main__":
 
 
     agents = [
-        #RandomAgent(),
-        #KeyboardAgent(cli),
-        cli.loadModelBasedAgent(0),
-        cli.loadModelBasedAgent(1),
+        RandomAgent(),
+        #cli.loadModelBasedAgent(0),
+        KeyboardAgent(cli),
+        #cli.loadModelBasedAgent(1),
     ]
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
