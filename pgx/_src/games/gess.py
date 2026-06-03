@@ -35,10 +35,8 @@ N          = BOARD_SIZE ** 2  # 400 flat cells
 MIN_IDX    = 1             # first playing-area row/col index
 MAX_IDX    = 18            # last  playing-area row/col index
 
-# Eight compass directions as (dr, dc) Python tuples.
-_DIRS = [(-1, -1), (-1, 0), (-1, 1),
-         ( 0, -1),          ( 0, 1),
-         ( 1, -1), ( 1, 0), ( 1, 1)]
+# Eight compass directions as a JAX array (8, 2) of (dr, dc) pairs.
+_DIRS_ARR: Array = jnp.int32([[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
 
 # Row/column offsets for all 9 cells in a 3×3 footprint (row-major order).
 _SLOT_DR: Array = jnp.int32([-1, -1, -1,  0,  0,  0,  1,  1,  1])
@@ -215,9 +213,10 @@ def _legal_dest_mask(state: GameState, source: Array) -> Array:
     max_steps  = jax.lax.select(has_center, jnp.int32(BOARD_SIZE), jnp.int32(3))
     occupied   = (board != 0)          # (N,) bool – any stone on the board
 
-    result = jnp.zeros(N, dtype=jnp.int32)
+    def _one_dir(dr_dc):
+        """Valid destinations and their flat indices for a single direction."""
+        dr, dc = dr_dc[0], dr_dc[1]
 
-    for dr, dc in _DIRS:
         # Direction enabled: own stone at the footprint cell one step that way.
         dir_r       = src_r + dr
         dir_c       = src_c + dc
@@ -242,7 +241,6 @@ def _legal_dest_mask(state: GameState, source: Array) -> Array:
         safe_fp  = jnp.clip(fp_r * BOARD_SIZE + fp_c, 0, N - 1)
 
         # Is this footprint cell transparent (part of the source's own footprint)?
-        # Arithmetic test: within 1 step of (src_r, src_c) in both axes.
         in_src = (jnp.abs(fp_r - src_r) <= 1) & (jnp.abs(fp_c - src_c) <= 1)
 
         # Clearance hit: in dest footprint, not transparent, occupied  →  (19,)
@@ -250,19 +248,23 @@ def _legal_dest_mask(state: GameState, source: Array) -> Array:
             jnp.any(fp_valid & ~in_src & occupied[safe_fp], axis=1) & in_bounds
         )
 
-        # blocked_before[k] = any blocker at steps 0..k-1.
-        # Computed via prefix cumsum; XLA parallelises this as a prefix tree.
+        # blocked_before[k] = any blocker at steps 0..k-1 (prefix cumsum).
         blocked_before = jnp.concatenate([
             jnp.zeros(1, jnp.int32),
             jnp.cumsum(has_blocker.astype(jnp.int32))[:-1],
-        ]) > 0  # (19,) bool
+        ]) > 0  # (19,)
 
         is_valid = dir_enabled & ~blocked_before & in_bounds & in_range
-        result   = result + jnp.zeros(N, dtype=jnp.int32).at[safe_dest].add(
-            is_valid.astype(jnp.int32)
-        )
+        return is_valid.astype(jnp.int32), safe_dest   # (19,), (19,)
 
-    return result > 0
+    # Evaluate all 8 directions in one vectorised pass  →  (8, 19) each.
+    # vmap makes the direction-parallelism explicit to XLA: a single fused
+    # (8, 19, 9) board-gather and one (8×19) scatter rather than 8 separate ops.
+    is_valid_8, safe_dest_8 = jax.vmap(_one_dir)(_DIRS_ARR)
+
+    return (jnp.zeros(N, dtype=jnp.int32)
+            .at[safe_dest_8.flatten()]
+            .add(is_valid_8.flatten())) > 0
 
 
 # ─── Ring detection ──────────────────────────────────────────────────────────
