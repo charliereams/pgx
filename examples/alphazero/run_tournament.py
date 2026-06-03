@@ -90,22 +90,28 @@ _GESS_COLS = 'abcdefghijklmnopqrst'
 
 
 def _gess_idx_to_label(idx: int) -> str:
-    """Flat board index (row*20+col) → label like 'e6'."""
-    col = idx % _GESS_SIZE
-    row = idx // _GESS_SIZE
-    return f"{_GESS_COLS[col]}{row + 1}"
+    """Flat board index (row_idx*20+col) → label like 'p3'.
+
+    Uses the standard Gess notation: label = 20 − row_index, so row_index 0
+    (the top border) = label 20, row_index 19 (bottom border) = label 1.
+    Column a–t corresponds to column index 0–19.
+    """
+    col     = idx % _GESS_SIZE
+    row_idx = idx // _GESS_SIZE
+    return f"{_GESS_COLS[col]}{_GESS_SIZE - row_idx}"
 
 
 def _gess_label_to_idx(s: str) -> int | None:
-    """Parse a Gess label like 'e6' → flat index, or None on failure.
-    Column a–t maps to 0–19; row number 1–20 maps to row-index 0–19.
+    """Parse a label like 'p3' → flat index, or None on failure.
+
+    Standard Gess notation: row_index = 20 − label_number.
     """
     m = re.fullmatch(r'([a-t])(20|1[0-9]|[1-9])', s.strip().lower())
     if not m:
         return None
-    col = ord(m.group(1)) - ord('a')
-    row = int(m.group(2)) - 1
-    return row * _GESS_SIZE + col
+    col     = ord(m.group(1)) - ord('a')
+    row_idx = _GESS_SIZE - int(m.group(2))
+    return row_idx * _GESS_SIZE + col
 
 
 class GessCli(Cli):
@@ -135,9 +141,9 @@ class GessCli(Cli):
 
         header = "     " + " ".join(_GESS_COLS)
         print(header)
-        # Display top row (index 19, label 20) first, bottom (index 0, label 1) last.
-        for r in range(_GESS_SIZE - 1, -1, -1):
-            row_label = str(r + 1).rjust(3)
+        # Row index 0 = label 20 (top); row index 19 = label 1 (bottom).
+        for r in range(_GESS_SIZE):
+            row_label = str(_GESS_SIZE - r).rjust(3)
             cells = []
             for c in range(_GESS_SIZE):
                 val = int(board[r, c])
