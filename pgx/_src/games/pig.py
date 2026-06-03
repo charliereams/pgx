@@ -63,11 +63,12 @@ class Game:
 
 
     def observe(self, state: GameState) -> Array:
-        return jnp.hstack([
-            jnp.roll(state.totals, -state.color),
-            jnp.tile(state.turn_total, PLAYER_COUNT),
-            jnp.tile(state.last_roll, PLAYER_COUNT),
-        ])
+        totals = jnp.roll(state.totals, -state.color)
+        return jnp.stack([
+            totals / TARGET,
+            jnp.full(PLAYER_COUNT, state.turn_total) / TARGET,
+            jnp.full(PLAYER_COUNT, state.last_roll) / 6,
+        ], axis=-1)[:, jnp.newaxis, :]  # (2, 3) -> (2, 1, 3)
 
 
     def legal_action_mask(self, state: GameState) -> Array:

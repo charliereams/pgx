@@ -147,19 +147,20 @@ def test_rewards():
 
 
 def test_observe():
-    # Observation: [current_total, opponent_total, turn_total x2, last_roll x2].
+    # Shape: (2, 1, 3) — 2 player squares, 1 column, features=[total, turn_total, last_roll].
     x = make_x(color=0, totals=[30, 50], turn_total=7, last_roll=4)
     obs = game.observe(x)
-    assert obs[0] == 30, "first element should be current player's total"
-    assert obs[1] == 50, "second element should be opponent's total"
-    assert (obs[2:4] == 7).all(), "elements 2-3 should be turn_total tiled"
-    assert (obs[4:6] == 4).all(), "elements 4-5 should be last_roll tiled"
+    assert obs.shape == (2, 1, 3)
+    assert obs[0, 0, 0] == 30, "square 0: current player's total"
+    assert obs[1, 0, 0] == 50, "square 1: opponent's total"
+    assert obs[0, 0, 1] == 7 and obs[1, 0, 1] == 7, "feature 1: turn_total in both squares"
+    assert obs[0, 0, 2] == 4 and obs[1, 0, 2] == 4, "feature 2: last_roll in both squares"
 
-    # From player 1's perspective the totals should be swapped.
+    # Player 1's perspective: totals are swapped.
     x = make_x(color=1, totals=[30, 50], turn_total=7, last_roll=4)
     obs = game.observe(x)
-    assert obs[0] == 50, "current player (1) should see their own total first"
-    assert obs[1] == 30
+    assert obs[0, 0, 0] == 50, "square 0: player 1 sees their own total first"
+    assert obs[1, 0, 0] == 30, "square 1: player 0's total"
 
 
 def test_api():
