@@ -40,23 +40,12 @@ _DIRS = [(-1, -1), (-1, 0), (-1, 1),
          ( 0, -1),          ( 0, 1),
          ( 1, -1), ( 1, 0), ( 1, 1)]
 
+# Row/column offsets for all 9 cells in a 3×3 footprint (row-major order).
+_SLOT_DR: Array = jnp.int32([-1, -1, -1,  0,  0,  0,  1,  1,  1])
+_SLOT_DC: Array = jnp.int32([-1,  0,  1, -1,  0,  1, -1,  0,  1])
 
-# ─── Precomputed footprint table ────────────────────────────────────────────
-# _FP_MASK[c, i] is True iff cell i falls inside the 3×3 footprint centred
-# on cell c.  Cells outside the 20×20 grid are never True (off-board).
-def _build_fp_mask() -> Array:
-    mask = np.zeros((N, N), dtype=np.bool_)
-    for c in range(N):
-        r0, c0 = divmod(c, BOARD_SIZE)
-        for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                r1, c1 = r0 + dr, c0 + dc
-                if 0 <= r1 < BOARD_SIZE and 0 <= c1 < BOARD_SIZE:
-                    mask[c, r1 * BOARD_SIZE + c1] = True
-    return jnp.array(mask)
-
-
-_FP_MASK: Array = _build_fp_mask()   # (400, 400) bool, compile-time constant
+# Steps 1..19 — the most a piece centre can ever travel within the 20×20 grid.
+_STEPS: Array = jnp.arange(1, BOARD_SIZE, dtype=jnp.int32)
 
 
 # ─── GameState ──────────────────────────────────────────────────────────────
@@ -210,9 +199,12 @@ def _legal_source_mask(state: GameState) -> Array:
 def _legal_dest_mask(state: GameState, source: Array) -> Array:
     """Boolean mask (400,): True for reachable destination centres from `source`.
 
-    For each enabled direction, we scan up to max_steps (3 or unlimited).
-    Movement stops at the first step whose new footprint overlaps any stone
-    not already in the source footprint.  That stopping cell IS a valid dest.
+    All 19 potential steps per direction are evaluated in parallel:
+      1. Compute (19, 9) footprint-cell coordinates for every step at once.
+      2. Check clearance against the board with a (19, 9) gather — no 400-wide
+         table lookup needed; footprint membership is tested arithmetically.
+      3. Replace the sequential `lax.scan` carry with a prefix cumsum to find
+         the "first blocker" boundary, which XLA can parallelise.
     """
     board     = state.board
     own_stone = jnp.int8(state.color + 1)
@@ -221,42 +213,54 @@ def _legal_dest_mask(state: GameState, source: Array) -> Array:
     src_c      = source  % BOARD_SIZE
     has_center = (board[source] == own_stone)
     max_steps  = jax.lax.select(has_center, jnp.int32(BOARD_SIZE), jnp.int32(3))
-    src_fp     = _FP_MASK[source]   # (N,) bool – transparent origin footprint
+    occupied   = (board != 0)          # (N,) bool – any stone on the board
 
     result = jnp.zeros(N, dtype=jnp.int32)
 
     for dr, dc in _DIRS:
-        # Is the footprint cell in this direction occupied by an own stone?
-        dir_r = src_r + jnp.int32(dr)
-        dir_c = src_c + jnp.int32(dc)
+        # Direction enabled: own stone at the footprint cell one step that way.
+        dir_r       = src_r + dr
+        dir_c       = src_c + dc
         dir_inbnd   = ((dir_r >= 0) & (dir_r < BOARD_SIZE) &
                        (dir_c >= 0) & (dir_c < BOARD_SIZE))
         safe_dir    = jnp.clip(dir_r * BOARD_SIZE + dir_c, 0, N - 1)
         dir_enabled = dir_inbnd & (board[safe_dir] == own_stone)
 
-        # Use default-argument capture to freeze dr/dc per loop iteration.
-        def scan_step(blocked, step, _dr=dr, _dc=dc):
-            nr = src_r + jnp.int32(_dr) * step
-            nc = src_c + jnp.int32(_dc) * step
-            in_bounds = ((nr >= 0) & (nr < BOARD_SIZE) &
-                         (nc >= 0) & (nc < BOARD_SIZE))
-            in_range  = step <= max_steps
-            safe_dest = jnp.clip(nr * BOARD_SIZE + nc, 0, N - 1)
+        # Destination centres for steps 1..19  →  (19,)
+        nr        = src_r + dr * _STEPS
+        nc        = src_c + dc * _STEPS
+        in_bounds = ((nr >= 0) & (nr < BOARD_SIZE) &
+                     (nc >= 0) & (nc < BOARD_SIZE))
+        in_range  = _STEPS <= max_steps
+        safe_dest = jnp.clip(nr * BOARD_SIZE + nc, 0, N - 1)
 
-            # Cells newly covered (not transparent source cells) with any stone.
-            clearance    = _FP_MASK[safe_dest] & ~src_fp
-            has_blocking = jnp.any((board != 0) & clearance) & in_bounds
+        # 3×3 footprint cells for every destination  →  (19, 9)
+        fp_r     = nr[:, None] + _SLOT_DR[None, :]
+        fp_c     = nc[:, None] + _SLOT_DC[None, :]
+        fp_valid = ((fp_r >= 0) & (fp_r < BOARD_SIZE) &
+                    (fp_c >= 0) & (fp_c < BOARD_SIZE))
+        safe_fp  = jnp.clip(fp_r * BOARD_SIZE + fp_c, 0, N - 1)
 
-            is_valid    = dir_enabled & ~blocked & in_bounds & in_range
-            new_blocked = blocked | (has_blocking & in_bounds)
-            return new_blocked, (is_valid.astype(jnp.int32), safe_dest)
+        # Is this footprint cell transparent (part of the source's own footprint)?
+        # Arithmetic test: within 1 step of (src_r, src_c) in both axes.
+        in_src = (jnp.abs(fp_r - src_r) <= 1) & (jnp.abs(fp_c - src_c) <= 1)
 
-        _, (valid_flags, dest_idxs) = jax.lax.scan(
-            scan_step,
-            jnp.bool_(False),
-            jnp.arange(1, BOARD_SIZE, dtype=jnp.int32),  # steps 1..19
+        # Clearance hit: in dest footprint, not transparent, occupied  →  (19,)
+        has_blocker = (
+            jnp.any(fp_valid & ~in_src & occupied[safe_fp], axis=1) & in_bounds
         )
-        result = result + jnp.zeros(N, dtype=jnp.int32).at[dest_idxs].add(valid_flags)
+
+        # blocked_before[k] = any blocker at steps 0..k-1.
+        # Computed via prefix cumsum; XLA parallelises this as a prefix tree.
+        blocked_before = jnp.concatenate([
+            jnp.zeros(1, jnp.int32),
+            jnp.cumsum(has_blocker.astype(jnp.int32))[:-1],
+        ]) > 0  # (19,) bool
+
+        is_valid = dir_enabled & ~blocked_before & in_bounds & in_range
+        result   = result + jnp.zeros(N, dtype=jnp.int32).at[safe_dest].add(
+            is_valid.astype(jnp.int32)
+        )
 
     return result > 0
 
