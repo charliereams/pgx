@@ -98,7 +98,9 @@ def recurrent_fn(model, key: jnp.ndarray, action: jnp.ndarray, state: pgx.State)
 
     reward = state.rewards[jnp.arange(state.rewards.shape[0]), current_player]
     value = jnp.where(state.terminated, 0.0, value)
-    discount = -1.0 * jnp.ones_like(value)
+    # Discount is -1 when the acting player changes (zero-sum perspective flip),
+    # and +1 when the same player acts again (e.g. rolling again in Pig).
+    discount = jnp.where(state.current_player != current_player, -1.0, 1.0)
     discount = jnp.where(state.terminated, 0.0, discount)
 
     recurrent_fn_output = mctx.RecurrentFnOutput(
@@ -145,7 +147,7 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
         actor = state.current_player
         init_keys = jax.random.split(init_key, batch_size)
         state = jax.vmap(auto_reset(env.step, env.init))(state, policy_output.action, init_keys)
-        discount = -1.0 * jnp.ones_like(value)
+        discount = jnp.where(state.current_player != actor, -1.0, 1.0)
         discount = jnp.where(state.terminated, 0.0, discount)
         return state, SelfplayOutput(
             obs=observation,
@@ -248,9 +250,9 @@ def evaluate(rng_key, my_model):
         opp_logits, _ = baseline(state.observation)
         is_my_turn = (state.current_player == my_player).reshape((-1, 1))
         logits = jnp.where(is_my_turn, my_logits, opp_logits)
-        key, subkey = jax.random.split(key) # TODO: unnecessary split?
-        action = jax.random.categorical(subkey, logits, axis=-1)
-        state = jax.vmap(env.step)(state, action, jax.random.split(subkey, batch_size))
+        key, action_key, state_key = jax.random.split(key, 3)
+        action = jax.random.categorical(action_key, logits, axis=-1)
+        state = jax.vmap(env.step)(state, action, jax.random.split(state_key, batch_size))
         R = R + state.rewards[jnp.arange(batch_size), my_player]
         return (key, state, R)
 
