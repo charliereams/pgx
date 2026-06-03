@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 
 import pgx.core as core
-from pgx._src.games.gess import Game, GameState, N, BOARD_SIZE
+from pgx._src.games.gess import Game, GameState, N, BOARD_SIZE, MIN_IDX, MAX_IDX
 from pgx._src.struct import dataclass
 from pgx._src.types import Array, PRNGKey
 
@@ -32,7 +32,7 @@ class State(core.State):
     `current_player` is unchanged between the two steps of the same move.
     """
     current_player:    Array = jnp.int32(0)
-    observation:       Array = jnp.zeros((BOARD_SIZE, BOARD_SIZE, 4), dtype=jnp.float32)
+    observation:       Array = jnp.zeros((MAX_IDX - MIN_IDX + 1, MAX_IDX - MIN_IDX + 1, 4), dtype=jnp.float32)
     rewards:           Array = jnp.float32([0.0, 0.0])
     terminated:        Array = jnp.bool_(False)
     truncated:         Array = jnp.bool_(False)

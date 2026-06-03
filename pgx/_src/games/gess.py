@@ -289,7 +289,10 @@ def _has_ring(board: Array, stone_val: Array) -> Array:
 # ─── Observation ─────────────────────────────────────────────────────────────
 
 def _observe(state: GameState, color: Array) -> Array:
-    """Return a (20, 20, 4) float32 observation from `color`'s perspective.
+    """Return an (18, 18, 4) float32 observation from `color`'s perspective.
+
+    The border ring (row/col 0 and 19) is always empty by the game rules, so
+    the observation covers only the 18×18 playing area (rows/cols 1–18).
 
     Channels:
       0 – own stones
@@ -300,21 +303,23 @@ def _observe(state: GameState, color: Array) -> Array:
     own_stone = jnp.int8(color + 1)
     opp_stone = jnp.int8(2 - color)
     b = state.board.reshape(BOARD_SIZE, BOARD_SIZE)
+    p = slice(MIN_IDX, MAX_IDX + 1)   # slice for the playing area
 
-    own = (b == own_stone).astype(jnp.float32)
-    opp = (b == opp_stone).astype(jnp.float32)
+    own = (b[p, p] == own_stone).astype(jnp.float32)
+    opp = (b[p, p] == opp_stone).astype(jnp.float32)
 
     src_r = state.source // BOARD_SIZE
     src_c = state.source  % BOARD_SIZE
-    rr = jnp.arange(BOARD_SIZE, dtype=jnp.int32)[:, None]
-    cc = jnp.arange(BOARD_SIZE, dtype=jnp.int32)[None, :]
+    rr = jnp.arange(MIN_IDX, MAX_IDX + 1, dtype=jnp.int32)[:, None]
+    cc = jnp.arange(MIN_IDX, MAX_IDX + 1, dtype=jnp.int32)[None, :]
     in_src_fp = ((jnp.abs(rr - src_r) <= 1) &
                  (jnp.abs(cc - src_c) <= 1) &
                  (state.stage == 1)).astype(jnp.float32)
 
-    stage_plane = jnp.full((BOARD_SIZE, BOARD_SIZE), state.stage.astype(jnp.float32))
+    play_size  = MAX_IDX - MIN_IDX + 1   # 18
+    stage_plane = jnp.full((play_size, play_size), state.stage.astype(jnp.float32))
 
-    return jnp.stack([own, opp, in_src_fp, stage_plane], axis=-1)  # (20, 20, 4)
+    return jnp.stack([own, opp, in_src_fp, stage_plane], axis=-1)  # (18, 18, 4)
 
 
 # ─── Initial position ────────────────────────────────────────────────────────

@@ -86,7 +86,7 @@ def test_pgx_init():
     assert state.rewards.tolist() == [0.0, 0.0]
     assert state._x.stage == 0
     assert state._x.winner == -1
-    assert state.observation.shape == (BOARD_SIZE, BOARD_SIZE, 4)
+    assert state.observation.shape == (MAX_IDX - MIN_IDX + 1, MAX_IDX - MIN_IDX + 1, 4)
 
 
 # ─── ring detection ──────────────────────────────────────────────────────────
@@ -328,4 +328,4 @@ def test_make_gess():
     assert isinstance(env2, Gess)
     state = env2.init(jax.random.PRNGKey(0))
     assert state.legal_action_mask.shape == (N,)
-    assert state.observation.shape == (BOARD_SIZE, BOARD_SIZE, 4)
+    assert state.observation.shape == (MAX_IDX - MIN_IDX + 1, MAX_IDX - MIN_IDX + 1, 4)
