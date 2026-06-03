@@ -85,6 +85,121 @@ class Cli(ABC):
         pass
 
 
+_GESS_SIZE = 20   # total grid side
+_GESS_COLS = 'abcdefghijklmnopqrst'
+
+
+def _gess_idx_to_label(idx: int) -> str:
+    """Flat board index (row*20+col) → label like 'e6'."""
+    col = idx % _GESS_SIZE
+    row = idx // _GESS_SIZE
+    return f"{_GESS_COLS[col]}{row + 1}"
+
+
+def _gess_label_to_idx(s: str) -> int | None:
+    """Parse a Gess label like 'e6' → flat index, or None on failure.
+    Column a–t maps to 0–19; row number 1–20 maps to row-index 0–19.
+    """
+    m = re.fullmatch(r'([a-t])(20|1[0-9]|[1-9])', s.strip().lower())
+    if not m:
+        return None
+    col = ord(m.group(1)) - ord('a')
+    row = int(m.group(2)) - 1
+    return row * _GESS_SIZE + col
+
+
+class GessCli(Cli):
+    """CLI for Gess.
+
+    Each full move is two actions: pick source centre, then destination.
+    The user may enter either a single square label per prompt, or the
+    complete move 'a2-e6' at the source prompt (the destination is stashed
+    and used automatically at the next stage).
+    """
+
+    def __init__(self):
+        self._stage = 0          # updated by display()
+        self._src_label: str | None = None
+        self._stashed_dst: int | None = None
+
+    def display(self, state):
+        board = np.array(state._x.board[0]).reshape(_GESS_SIZE, _GESS_SIZE)
+        stage  = int(state._x.stage[0])
+        source = int(state._x.source[0])
+        self._stage = stage
+        if stage == 0:
+            self._src_label   = None
+            self._stashed_dst = None
+
+        src_r, src_c = source // _GESS_SIZE, source % _GESS_SIZE
+
+        header = "     " + " ".join(_GESS_COLS)
+        print(header)
+        # Display top row (index 19, label 20) first, bottom (index 0, label 1) last.
+        for r in range(_GESS_SIZE - 1, -1, -1):
+            row_label = str(r + 1).rjust(3)
+            cells = []
+            for c in range(_GESS_SIZE):
+                val = int(board[r, c])
+                in_src_fp = (stage == 1 and
+                             abs(r - src_r) <= 1 and abs(c - src_c) <= 1)
+                if val == 1:
+                    ch = 'X' if in_src_fp else 'x'   # black
+                elif val == 2:
+                    ch = 'O' if in_src_fp else 'o'   # white
+                elif in_src_fp:
+                    ch = '□'                          # empty source-fp cell
+                elif 1 <= r <= 18 and 1 <= c <= 18:
+                    ch = '·'                          # empty playing area
+                else:
+                    ch = '.'                          # border ring
+                cells.append(ch)
+            print(f"{row_label} |{' '.join(cells)}|")
+        print(header)
+
+        if stage == 1:
+            print(f"  Source selected: {self._src_label}  — enter destination.")
+        else:
+            player = "Black (x)" if int(state.current_player[0]) == 0 else "White (o)"
+            print(f"  {player} to move.")
+        print()
+
+    def getActionId(self):
+        if self._stage == 0:
+            raw = input("Move (e.g. c7-e9) or source (e.g. c7): ").strip().lower()
+            if '-' in raw:
+                parts = raw.split('-', 1)
+                src_idx = _gess_label_to_idx(parts[0])
+                dst_idx = _gess_label_to_idx(parts[1])
+                if src_idx is not None and dst_idx is not None:
+                    self._src_label   = parts[0].strip()
+                    self._stashed_dst = dst_idx
+                    return src_idx
+                return None
+            idx = _gess_label_to_idx(raw)
+            if idx is not None:
+                self._src_label = raw
+            return idx
+        else:
+            # Use stashed destination if the user entered a full move in stage 0.
+            if self._stashed_dst is not None:
+                dst = self._stashed_dst
+                self._stashed_dst = None
+                return dst
+            raw = input(f"Destination (source={self._src_label}, e.g. e9): ").strip().lower()
+            return _gess_label_to_idx(raw)
+
+    def describe_action(self, action) -> str:
+        label = _gess_idx_to_label(int(action[0]))
+        if self._stage == 0:
+            return f"chose source {label}"
+        else:
+            return f"moved {self._src_label} → {label}"
+
+    def loadModelBasedAgent(self, player_num):
+        raise NotImplementedError("No trained Gess model available yet")
+
+
 class DomineeringCli(Cli):
     def getActionId(self):
         square_code = input("Move: ")
@@ -218,6 +333,8 @@ class PigCli(Cli):
 
 def GetCli(env_id: pgx.EnvId) -> Cli:
     match env_id:
+        case "gess":
+            return GessCli()
         case "domineering":
             return DomineeringCli()
         case "g_hex":
