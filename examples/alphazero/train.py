@@ -331,7 +331,54 @@ if __name__ == "__main__":
         samples: Sample = compute_loss_input(data)
 
         # Shuffle samples and make minibatches
-        samples = jax.device_get(samples)  # (#devices, batch, max_num_steps, ...)
+        samples = jax.device_get(samples)  # (#devices, max_num_steps, batch, ...)
+
+        # ── Value-target diagnostics ───────────────────────────────────────
+        # samples.value_tgt : (num_devices, max_num_steps, batch_per_device)
+        # samples.mask       : same shape; True for steps inside a terminated episode
+        # samples.obs        : (..., H, W, C)
+        vtgt  = samples.value_tgt.flatten()
+        vmask = samples.mask.flatten().astype(bool)
+        n_total = len(vmask)
+        n_valid = int(vmask.sum())
+
+        def _hist(tgt):
+            n = len(tgt)
+            if n == 0:
+                return "n=0"
+            pos  = int((tgt >  0.5).sum())
+            neg  = int((tgt < -0.5).sum())
+            zero = n - pos - neg
+            return (f"+1:{100*pos/n:5.1f}%  0:{100*zero/n:5.1f}%  -1:{100*neg/n:5.1f}%"
+                    f"  mean={tgt.mean():+.3f}  std={tgt.std():.3f}")
+
+        vtgt_v = vtgt[vmask]
+        print(f"  value targets  mask:{100*n_valid/n_total:5.1f}%  {_hist(vtgt_v)}")
+
+        # For games with a two-stage move structure the obs last channel encodes
+        # the current stage (0.0 = pick-source, 1.0 = pick-dest).  Breaking the
+        # histogram down by stage reveals whether targets are sign-flipped between
+        # the two halves of a move, which would let the network trivially drive
+        # value loss toward zero by learning a sign-switch on that channel.
+        obs_last_ch = samples.obs[..., -1]          # (..., H, W) – last obs channel
+        stage_flag  = obs_last_ch.reshape(n_total, -1).mean(axis=1) > 0.5  # per sample
+        s0_mask = vmask & ~stage_flag
+        s1_mask = vmask &  stage_flag
+        if s0_mask.any() and s1_mask.any():
+            print(f"  stage-0 (src)  {_hist(vtgt[s0_mask])}")
+            print(f"  stage-1 (dst)  {_hist(vtgt[s1_mask])}")
+
+        log.update({
+            "train/value_tgt/mask_pct":  100 * n_valid / n_total,
+            "train/value_tgt/pct_pos1":  100 * float((vtgt_v >  0.5).mean()) if n_valid else 0,
+            "train/value_tgt/pct_zero":  100 * float(((vtgt_v >= -0.5) & (vtgt_v <= 0.5)).mean()) if n_valid else 0,
+            "train/value_tgt/pct_neg1":  100 * float((vtgt_v < -0.5).mean()) if n_valid else 0,
+            "train/value_tgt/mean":      float(vtgt_v.mean()) if n_valid else 0.0,
+            "train/value_tgt/std":       float(vtgt_v.std())  if n_valid else 0.0,
+            "train/value_tgt/s0_mean":   float(vtgt[s0_mask].mean()) if s0_mask.any() else 0.0,
+            "train/value_tgt/s1_mean":   float(vtgt[s1_mask].mean()) if s1_mask.any() else 0.0,
+        })
+        # ──────────────────────────────────────────────────────────────────
         frames += samples.obs.shape[0] * samples.obs.shape[1] * samples.obs.shape[2]
         samples = jax.tree_util.tree_map(lambda x: x.reshape((-1, *x.shape[3:])), samples)
         rng_key, subkey = jax.random.split(rng_key)
