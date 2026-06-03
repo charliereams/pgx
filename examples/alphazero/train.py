@@ -97,7 +97,9 @@ def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.St
 
     reward = state.rewards[jnp.arange(state.rewards.shape[0]), current_player]
     value = jnp.where(state.terminated, 0.0, value)
-    discount = -1.0 * jnp.ones_like(value)
+    # +1 when the same player is still to move (multi-stage turn), -1 when the
+    # opponent is now to move (normal alternating case), 0 at terminal.
+    discount = jnp.where(state.current_player == current_player, 1.0, -1.0)
     discount = jnp.where(state.terminated, 0.0, discount)
 
     recurrent_fn_output = mctx.RecurrentFnOutput(
@@ -144,7 +146,9 @@ def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
         actor = state.current_player
         keys = jax.random.split(key2, batch_size)
         state = jax.vmap(auto_reset(env.step, env.init))(state, policy_output.action, keys)
-        discount = -1.0 * jnp.ones_like(value)
+        # +1 when the same player is still to move (multi-stage turn), -1 when
+        # the opponent is now to move (normal alternating case), 0 at terminal.
+        discount = jnp.where(state.current_player == actor, 1.0, -1.0)
         discount = jnp.where(state.terminated, 0.0, discount)
         return state, SelfplayOutput(
             obs=observation,
