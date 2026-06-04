@@ -329,3 +329,43 @@ def test_make_gess():
     state = env2.init(jax.random.PRNGKey(0))
     assert state.legal_action_mask.shape == (N,)
     assert state.observation.shape == (MAX_IDX - MIN_IDX + 1, MAX_IDX - MIN_IDX + 1, 4)
+
+def test_mover_loses_when_both_final_rings_destroyed():
+    # Black's only ring at (10,10), white's only ring at (10,14).
+    # Black moves (10,6)→(10,12); destination footprint (rows 9-11, cols 11-13)
+    # clips 3 stones from black's ring (cols 11) and 3 from white's ring (cols 13),
+    # destroying both. Neither player has a ring → mover (black) loses.
+    black_ring = [(BLACK, r, c) for r in range(9, 12) for c in range(9, 12)
+                  if not (r == 10 and c == 10)]
+    white_ring = [(WHITE, r, c) for r in range(9, 12) for c in range(13, 16)
+                  if not (r == 10 and c == 14)]
+    board = make_board(*black_ring, *white_ring, (BLACK, 10, 6), (BLACK, 10, 7))
+
+    state = make_state(color=0, board=board, stage=1, source=idx(10, 6))
+    x = game.step(state, jnp.int32(idx(10, 12)))
+
+    assert int(x.winner) == 1, (
+        "white should win: both final rings destroyed → mover (black) loses"
+    )
+
+def test_mover_wins_when_own_nonfinal_ring_and_opp_final_ring_destroyed():
+    # Black has TWO rings: ring A at (10,10) and ring B at (15,10).
+    # White has ONE ring at (10,14).
+    # Black moves (10,6)→(10,12); destination footprint destroys ring A and white's
+    # ring, but ring B (rows 14-16) is untouched. Black still has a ring → black wins.
+    black_ring_a = [(BLACK, r, c) for r in range(9, 12) for c in range(9, 12)
+                    if not (r == 10 and c == 10)]
+    black_ring_b = [(BLACK, r, c) for r in range(14, 17) for c in range(9, 12)
+                    if not (r == 15 and c == 10)]
+    white_ring   = [(WHITE, r, c) for r in range(9, 12) for c in range(13, 16)
+                    if not (r == 10 and c == 14)]
+    board = make_board(*black_ring_a, *black_ring_b, *white_ring,
+                       (BLACK, 10, 6), (BLACK, 10, 7))
+
+    state = make_state(color=0, board=board, stage=1, source=idx(10, 6))
+    x = game.step(state, jnp.int32(idx(10, 12)))
+
+    assert int(x.winner) == 0, (
+        "black should win: ring B survives even though ring A and white's only ring "
+        "were both destroyed"
+    )
