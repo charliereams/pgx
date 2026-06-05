@@ -139,13 +139,16 @@ class GessCli(Cli):
 
         src_r, src_c = source // _GESS_SIZE, source % _GESS_SIZE
 
-        header = "     " + " ".join(_GESS_COLS)
+        # The outer ring (row/col index 0 and 19) is an unplayable border that can
+        # never be occupied, so we omit it and render only the inner 18x18 area.
+        inner = range(1, _GESS_SIZE - 1)
+        header = "     " + " ".join(_GESS_COLS[1:_GESS_SIZE - 1])
         print(header)
-        # Row index 0 = label 20 (top); row index 19 = label 1 (bottom).
-        for r in range(_GESS_SIZE):
+        # Row index 1 = label 19 (top); row index 18 = label 2 (bottom).
+        for r in inner:
             row_label = str(_GESS_SIZE - r).rjust(3)
             cells = []
-            for c in range(_GESS_SIZE):
+            for c in inner:
                 val = int(board[r, c])
                 in_src_fp = (stage == 1 and
                              abs(r - src_r) <= 1 and abs(c - src_c) <= 1)
@@ -155,10 +158,8 @@ class GessCli(Cli):
                     ch = 'O' if in_src_fp else 'o'   # white
                 elif in_src_fp:
                     ch = '□'                          # empty source-fp cell
-                elif 1 <= r <= 18 and 1 <= c <= 18:
-                    ch = '·'                          # empty playing area
                 else:
-                    ch = '.'                          # border ring
+                    ch = '·'                          # empty playing area
                 cells.append(ch)
             print(f"{row_label} |{' '.join(cells)}|")
         print(header)
