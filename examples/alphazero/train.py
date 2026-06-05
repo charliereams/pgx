@@ -40,6 +40,11 @@ class Config(BaseModel):
     env_id: pgx.EnvId = "go_9x9"
     seed: int = 0
     max_num_iters: int = 400
+    # path to a .ckpt file to resume training from (empty = start from scratch)
+    resume_from: str = ""
+    # wandb run id to resume logging into. If empty when resuming, the id stored
+    # in the checkpoint (if any) is used so the original run continues.
+    wandb_run_id: str = ""
     # network params
     num_channels: int = 128
     num_layers: int = 6
@@ -263,29 +268,62 @@ def evaluate(rng_key, my_model):
 
 
 if __name__ == "__main__":
-    wandb.init(project=f"pgx-az-{config.env_id}", config=config.model_dump())
+    # Load checkpoint up front (if resuming) so we can also recover the wandb run id
+    ckpt = None
+    if config.resume_from:
+        print(f"Resuming from checkpoint: {config.resume_from}")
+        with open(config.resume_from, "rb") as f:
+            ckpt = pickle.load(f)
+
+    # Resume the original wandb run when possible
+    wandb_run_id = config.wandb_run_id
+    if not wandb_run_id and ckpt is not None:
+        wandb_run_id = ckpt.get("wandb_run_id", "")
+    wandb.init(
+        project=f"pgx-az-{config.env_id}",
+        config=config.model_dump(),
+        id=wandb_run_id or None,
+        resume="allow" if wandb_run_id else None,
+    )
 
     # Initialize model and opt_state
     dummy_state = jax.vmap(env.init)(jax.random.split(jax.random.PRNGKey(0), 2))
     dummy_input = dummy_state.observation
     model = forward.init(jax.random.PRNGKey(0), dummy_input)  # (params, state)
     opt_state = optimizer.init(params=model[0])
-    # replicates to all devices
-    model, opt_state = jax.device_put_replicated((model, opt_state), devices)
 
-    # Prepare checkpoint dir
-    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
-    now = now.strftime("%Y%m%d%H%M%S")
-    ckpt_dir = os.path.join("checkpoints", f"{config.env_id}_{now}")
-    os.makedirs(ckpt_dir, exist_ok=True)
-
-    # Initialize logging dict
+    # Logging/training state (may be overwritten when resuming from a checkpoint)
     iteration: int = 0
     hours: float = 0.0
     frames: int = 0
+    rng_key = jax.random.PRNGKey(config.seed)
+
+    # Optionally resume from a previous checkpoint
+    if ckpt is not None:
+        model = ckpt["model"]
+        opt_state = ckpt["opt_state"]
+        iteration = ckpt["iteration"]
+        frames = ckpt["frames"]
+        hours = ckpt["hours"]
+        rng_key = ckpt["rng_key"]
+        print(f"Resumed at iteration {iteration} ({frames} frames, {hours:.2f} hours)")
+
+    # replicates to all devices
+    model, opt_state = jax.device_put_replicated((model, opt_state), devices)
+
+    # Prepare checkpoint dir. When resuming, keep writing into the original
+    # checkpoint's directory; otherwise create a fresh timestamped one.
+    if config.resume_from:
+        ckpt_dir = os.path.dirname(config.resume_from)
+    else:
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
+        now = now.strftime("%Y%m%d%H%M%S")
+        ckpt_dir = os.path.join("checkpoints", f"{config.env_id}_{now}")
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    # Initialize logging dict
     log = {"iteration": iteration, "hours": hours, "frames": frames}
 
-    rng_key = jax.random.PRNGKey(config.seed)
     while True:
         if iteration % config.eval_interval == 0:
             # Evaluation
@@ -312,6 +350,7 @@ if __name__ == "__main__":
                     "iteration": iteration,
                     "frames": frames,
                     "hours": hours,
+                    "wandb_run_id": wandb.run.id,
                     "pgx.__version__": pgx.__version__,
                     "env_id": env.id,
                     "env_version": env.version,
