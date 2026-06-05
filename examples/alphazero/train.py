@@ -67,6 +67,34 @@ conf_dict = OmegaConf.from_cli()
 config: Config = Config(**conf_dict)
 print(config)
 
+
+def _validate_config(config: Config, num_devices: int) -> None:
+    # Each iteration produces selfplay_batch_size * max_num_steps samples, which
+    # are then reshaped into num_updates minibatches of training_batch_size. That
+    # reshape (and the per-device split) requires the divisibilities below;
+    # otherwise training crashes mid-run with an opaque reshape error.
+    total_samples = config.selfplay_batch_size * config.max_num_steps
+    if total_samples % config.training_batch_size != 0:
+        num_updates = total_samples // config.training_batch_size
+        remainder = total_samples - num_updates * config.training_batch_size
+        raise ValueError(
+            "training_batch_size must evenly divide selfplay_batch_size * max_num_steps. "
+            f"Got selfplay_batch_size={config.selfplay_batch_size} * "
+            f"max_num_steps={config.max_num_steps} = {total_samples} samples, "
+            f"training_batch_size={config.training_batch_size} -> "
+            f"{num_updates} full minibatches with {remainder} samples left over. "
+            f"Pick a training_batch_size that divides {total_samples} "
+            "(e.g. a power of two)."
+        )
+    if config.training_batch_size % num_devices != 0:
+        raise ValueError(
+            "training_batch_size must be divisible by the number of devices. "
+            f"Got training_batch_size={config.training_batch_size}, num_devices={num_devices}."
+        )
+
+
+_validate_config(config, num_devices)
+
 env = pgx.make(config.env_id)
 baseline = pgx.make_baseline_model(config.env_id + "_v0")
 
