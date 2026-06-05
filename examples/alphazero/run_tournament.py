@@ -451,6 +451,8 @@ class ModelAgent(Agent):
                 num_channels=config.num_channels,
                 num_blocks=config.num_layers,
                 resnet_v2=config.resnet_v2,
+                # Older checkpoints predate num_heads; default to all-conv.
+                num_heads=getattr(config, "num_heads", -1),
             )
             policy_out, value_out = net(x, is_training=not is_eval, test_local_stats=False)
             return policy_out, value_out

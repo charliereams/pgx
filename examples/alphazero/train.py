@@ -49,6 +49,9 @@ class Config(BaseModel):
     num_channels: int = 128
     num_layers: int = 6
     resnet_v2: bool = True
+    # num_heads > 0 replaces the final conv block with a multi-head
+    # self-attention block using that many heads; -1 keeps an all-conv net.
+    num_heads: int = -1
     # selfplay params
     selfplay_batch_size: int = 1024
     num_simulations: int = 32
@@ -105,6 +108,7 @@ def forward_fn(x, is_eval=False):
         num_channels=config.num_channels,
         num_blocks=config.num_layers,
         resnet_v2=config.resnet_v2,
+        num_heads=config.num_heads,
     )
     policy_out, value_out = net(x, is_training=not is_eval, test_local_stats=False)
     return policy_out, value_out
