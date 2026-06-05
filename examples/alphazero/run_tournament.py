@@ -46,6 +46,10 @@ class TourneyConfig(BaseModel):
     # e.g. players="model,model,me,model" -> loadModelBasedAgent(0), KeyboardAgent,
     #      loadModelBasedAgent(1), loadModelBasedAgent(2).
     players: str = "random,model"
+    # Comma-separated, fully-qualified checkpoint paths for the 'model' seats.
+    # They are applied round-robin: the n-th model seat uses paths[n % len(paths)],
+    # so one path is shared by all models, two paths alternate, etc.
+    models: str = ""
 
 
 class Config(BaseModel):
@@ -71,7 +75,7 @@ class Config(BaseModel):
 
 
 class MctsConfig(NamedTuple):
-    num_simulations: int = 128
+    num_simulations: int = 4096
     max_num_considered_actions: int = 16
 
 
@@ -85,7 +89,7 @@ class Cli(ABC):
         pass
 
     @abstractmethod
-    def loadModelBasedAgent(self, player_num):
+    def loadModelBasedAgent(self, player_num, model_path):
         pass
 
     @abstractmethod
@@ -211,8 +215,9 @@ class GessCli(Cli):
         else:
             return f"moved {self._src_label} → {label}"
 
-    def loadModelBasedAgent(self, player_num):
-        raise NotImplementedError("No trained Gess model available yet")
+    def loadModelBasedAgent(self, player_num, model_path):
+        config, model = load_from_checkpoint(model_path)
+        return ModelAgent(f"v{player_num}", "gess", MctsConfig(), config, model)
 
 
 class DomineeringCli(Cli):
@@ -236,9 +241,9 @@ class DomineeringCli(Cli):
     def describe_action(self, action) -> str:
         return f"played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}"
 
-    def loadModelBasedAgent(self, player_num):
-        config, model = load_from_checkpoint("domineering_20260131044700/000125.ckpt")
-        return ModelAgent("vDOM", "domineering", MctsConfig(), config, model)
+    def loadModelBasedAgent(self, player_num, model_path):
+        config, model = load_from_checkpoint(model_path)
+        return ModelAgent(f"v{player_num}", "domineering", MctsConfig(), config, model)
 
 
 class GHexCli(Cli):
@@ -265,9 +270,8 @@ class GHexCli(Cli):
     def describe_action(self, action) -> str:
         return f"played the {1 + (action[0] % 10)} on triangle {action[0] // 10}"
 
-    def loadModelBasedAgent(self, player_num):
-        #config, model = load_from_checkpoint("g_hex_20260125182112/000100.ckpt" if (player_num % 2) == 0 else "g_hex_20260125222445/000050.ckpt")
-        config, model = load_from_checkpoint("g_hex_20260504192940/001740.ckpt")
+    def loadModelBasedAgent(self, player_num, model_path):
+        config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", "g_hex", MctsConfig(), config, model)
 
 
@@ -295,10 +299,9 @@ class GHex2Cli(Cli):
     def describe_action(self, action) -> str:
         return f"played the {1 + (action[0] % 11)} on triangle {action[0] // 11}"  # TODO: *
 
-    def loadModelBasedAgent(self, player_num):
-        v_num = player_num % 2
-        config, model = load_from_checkpoint("g_hex2_20260327165407/000300.ckpt" if v_num == 0 else "g_hex2_20260327165407/000000.ckpt")
-        return ModelAgent(f"v{"PRO!" if v_num == 0 else "WEAK"}", "g_hex2", MctsConfig(), config, model)
+    def loadModelBasedAgent(self, player_num, model_path):
+        config, model = load_from_checkpoint(model_path)
+        return ModelAgent(f"v{player_num}", "g_hex2", MctsConfig(), config, model)
 
 
 class PigCli(Cli):
@@ -326,7 +329,7 @@ class PigCli(Cli):
     def describe_action(self, action) -> str:
         return "stopped" if action[0] == 0 else "rolled again"
 
-    def loadModelBasedAgent(self, player_num):
+    def loadModelBasedAgent(self, player_num, model_path):
         raise NotImplementedError("No trained Pig model available yet")
 
 
@@ -541,7 +544,7 @@ class ModelAgent(Agent):
 
 
 def load_from_checkpoint(path):
-  with open(f"checkpoints/{path}", "rb") as f:
+  with open(path, "rb") as f:
       ckpt = pickle.load(f)
       return ckpt["config"], ckpt["model"]
 
@@ -566,12 +569,12 @@ _HECKMECK_ACTION_NAMES = [
     "Busted",
 ]
 
-def build_agents(players: str, cli) -> list:
+def build_agents(players: str, model_paths: list, cli) -> list:
     """Parse a players spec like "random,me,model,model" into a list of agents.
 
-    Each successive 'model' token is given the next integer index, which is
-    passed to cli.loadModelBasedAgent (so different model seats can load
-    different checkpoints).
+    Each successive 'model' token is given the next integer index and a
+    checkpoint path chosen round-robin from model_paths, so one path is shared
+    by every model seat, two paths alternate between seats, and so on.
     """
     agents = []
     model_index = 0
@@ -582,7 +585,13 @@ def build_agents(players: str, cli) -> list:
         elif kind in ("me", "human", "keyboard", "kb"):
             agents.append(KeyboardAgent(cli))
         elif kind in ("model", "ai", "nn"):
-            agents.append(cli.loadModelBasedAgent(model_index))
+            if not model_paths:
+                raise ValueError(
+                    "players includes a 'model' seat but no models paths were given. "
+                    "Pass models=<path1>[,<path2>,...]."
+                )
+            path = model_paths[model_index % len(model_paths)]
+            agents.append(cli.loadModelBasedAgent(model_index, path))
             model_index += 1
         else:
             raise ValueError(
@@ -643,7 +652,8 @@ if __name__ == "__main__":
             turn_num += 1
 
 
-    agents = build_agents(tourney_config.players, cli)
+    model_paths = [p.strip() for p in tourney_config.models.split(",") if p.strip()]
+    agents = build_agents(tourney_config.players, model_paths, cli)
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
         rotation_pos = game_num % len(agents)
