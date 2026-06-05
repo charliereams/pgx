@@ -81,6 +81,7 @@ def make_baseline_model(model_id: BaselineModelId, download_dir: str = "baseline
             "num_channels": 256,
             "num_layers": 6,
             "resnet_v2": True,
+            "num_heads": 4,
           },
           shape = (1, 18, 18, 4))
     elif model_id == "domineering_v0":
@@ -262,6 +263,8 @@ def _create_az_model_v0(
     # We referred to Haiku's ResNet implementation:
     # https://github.com/deepmind/dm-haiku/blob/main/haiku/_src/nets/resnet.py
     import haiku as hk
+
+    print(f"Creating AZ model with num_heads={num_heads}")
 
     class BlockV1(hk.Module):
         def __init__(self, num_channels, name="BlockV1"):
