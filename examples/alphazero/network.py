@@ -80,6 +80,7 @@ class AZNet(hk.Module):
         name="az_net",
     ):
         super().__init__(name=name)
+        print(f"Creating AZ model with num_heads={num_heads}")
         self.num_actions = num_actions
         self.num_channels = num_channels
         self.num_blocks = num_blocks
