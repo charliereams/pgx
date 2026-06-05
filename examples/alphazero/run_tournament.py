@@ -38,6 +38,14 @@ class TourneyConfig(BaseModel):
     env_id: pgx.EnvId = "g_hex"
     seed: int = 49064405
     games: int = 256
+    # Comma-separated list of player types, one per seat. Valid types:
+    #   random  -> RandomAgent
+    #   me      -> KeyboardAgent (human at the keyboard)
+    #   model   -> a trained ModelAgent; each successive 'model' gets the next
+    #              index passed to loadModelBasedAgent (0, 1, 2, ...).
+    # e.g. players="model,model,me,model" -> loadModelBasedAgent(0), KeyboardAgent,
+    #      loadModelBasedAgent(1), loadModelBasedAgent(2).
+    players: str = "random,model"
 
 
 class Config(BaseModel):
@@ -558,6 +566,36 @@ _HECKMECK_ACTION_NAMES = [
     "Busted",
 ]
 
+def build_agents(players: str, cli) -> list:
+    """Parse a players spec like "random,me,model,model" into a list of agents.
+
+    Each successive 'model' token is given the next integer index, which is
+    passed to cli.loadModelBasedAgent (so different model seats can load
+    different checkpoints).
+    """
+    agents = []
+    model_index = 0
+    for token in players.split(","):
+        kind = token.strip().lower()
+        if kind in ("random", "rando", "rand"):
+            agents.append(RandomAgent())
+        elif kind in ("me", "human", "keyboard", "kb"):
+            agents.append(KeyboardAgent(cli))
+        elif kind in ("model", "ai", "nn"):
+            agents.append(cli.loadModelBasedAgent(model_index))
+            model_index += 1
+        else:
+            raise ValueError(
+                f"Unknown player type {token!r} in players={players!r}. "
+                "Valid types are: random, me, model."
+            )
+    if len(agents) < 2:
+        raise ValueError(
+            f"Need at least 2 players, got {len(agents)} from players={players!r}."
+        )
+    return agents
+
+
 if __name__ == "__main__":
     tourney_conf_dict = OmegaConf.from_cli()
     tourney_config: TourneyConfig = TourneyConfig(**tourney_conf_dict)
@@ -605,12 +643,7 @@ if __name__ == "__main__":
             turn_num += 1
 
 
-    agents = [
-        RandomAgent(),
-        #cli.loadModelBasedAgent(0),
-        KeyboardAgent(cli),
-        #cli.loadModelBasedAgent(1),
-    ]
+    agents = build_agents(tourney_config.players, cli)
     wins = np.zeros_like(agents)
     for game_num in range(0, tourney_config.games):
         rotation_pos = game_num % len(agents)
