@@ -96,6 +96,14 @@ class Cli(ABC):
     def describe_action(self, action) -> str:
         pass
 
+    def display_action_weights(self, action_weights):
+        """Print a game-specific view of the MCTS policy output.
+
+        Called by ModelAgent after each move. The default is a no-op; games
+        with a useful board-shaped debug view override it.
+        """
+        pass
+
 
 _GESS_SIZE = 20   # total grid side
 _GESS_COLS = 'abcdefghijklmnopqrst'
@@ -217,7 +225,7 @@ class GessCli(Cli):
 
     def loadModelBasedAgent(self, player_num, model_path):
         config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", "gess", MctsConfig(), config, model)
+        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class DomineeringCli(Cli):
@@ -241,9 +249,20 @@ class DomineeringCli(Cli):
     def describe_action(self, action) -> str:
         return f"played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}"
 
+    def display_action_weights(self, action_weights):
+        action_weights = jnp.hstack([
+            action_weights.reshape(8, 7),
+            jnp.zeros((8, 1), dtype=jnp.float32),
+        ])
+        print("\n".join(
+            "".join(f"{100*w:6.2f}%  " for w in w_row)
+            for w_row in action_weights
+        ))
+        print("")
+
     def loadModelBasedAgent(self, player_num, model_path):
         config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", "domineering", MctsConfig(), config, model)
+        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHexCli(Cli):
@@ -270,9 +289,15 @@ class GHexCli(Cli):
     def describe_action(self, action) -> str:
         return f"played the {1 + (action[0] % 10)} on triangle {action[0] // 10}"
 
+    def display_action_weights(self, action_weights):
+        action_weights = action_weights.reshape(21, 10)
+        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+                         for tri_i, tri_row in enumerate(action_weights)]))
+        print("")
+
     def loadModelBasedAgent(self, player_num, model_path):
         config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", "g_hex", MctsConfig(), config, model)
+        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHex2Cli(Cli):
@@ -299,9 +324,15 @@ class GHex2Cli(Cli):
     def describe_action(self, action) -> str:
         return f"played the {1 + (action[0] % 11)} on triangle {action[0] // 11}"  # TODO: *
 
+    def display_action_weights(self, action_weights):
+        action_weights = action_weights.reshape(23, 11)
+        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+                         for tri_i, tri_row in enumerate(action_weights)]))
+        print("")
+
     def loadModelBasedAgent(self, player_num, model_path):
         config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", "g_hex2", MctsConfig(), config, model)
+        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class PigCli(Cli):
@@ -413,7 +444,7 @@ class RandomAgent(Agent):
 
 
 class ModelAgent(Agent):
-    def __init__(self, name_prefix, env_id, mcts_config: MctsConfig, config: Config, model):
+    def __init__(self, name_prefix, mcts_config: MctsConfig, config: Config, model, cli):
         def forward_fn(x, is_eval=False):
             net = AZNet(
                 num_actions=env.num_actions,
@@ -452,7 +483,7 @@ class ModelAgent(Agent):
             return recurrent_fn_output, state
 
         self.name_prefix = name_prefix
-        self.env_id = env_id
+        self.cli = cli
         self.mcts_config = mcts_config
         self.mcts = partial(ModelAgent._run_mcts, forward, recurrent_fn, mcts_config, model) # Unjitted, for debugging.
         self.mcts_jit = jax.jit(self.mcts)
@@ -462,32 +493,12 @@ class ModelAgent(Agent):
 
     def getAction(self, key, state):
         # Debug view into the policy evaluation: (slow)
-        # self.mcts(key, state, debug_domineering=(self.env_id == "domineering"), debug_g_hex=(self.env_id == "g_hex"))
+        # self.mcts(key, state, debug_domineering=..., debug_g_hex=...)
         start_time = time.perf_counter()
         policy_output = self.mcts_jit(key, state)
         print(f"Thought for {time.perf_counter() - start_time:.1f} seconds.")
 
-        # Print some game-specific debug info.
-        if self.env_id == "domineering":
-            action_weights = jnp.hstack([
-                policy_output.action_weights.reshape(8, 7),
-                jnp.zeros((8, 1), dtype=jnp.float32),
-            ])
-            print("\n".join(
-                        "".join(f"{100*w:6.2f}%  " for w in w_row)
-                        for w_row in action_weights
-                    ))
-            print("")
-        elif self.env_id == "g_hex":
-            action_weights = policy_output.action_weights.reshape(21, 10)
-            print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
-                             for tri_i, tri_row in enumerate(action_weights)]))
-            print("")
-        elif self.env_id == "g_hex2":
-            action_weights = policy_output.action_weights.reshape(23, 11)
-            print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
-                             for tri_i, tri_row in enumerate(action_weights)]))
-            print("")
+        self.cli.display_action_weights(policy_output.action_weights)
 
         return policy_output.action
 
