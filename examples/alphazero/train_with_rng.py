@@ -270,8 +270,11 @@ if __name__ == "__main__":
     dummy_input = dummy_state.observation
     model = forward.init(jax.random.PRNGKey(0), dummy_input)  # (params, state)
     opt_state = optimizer.init(params=model[0])
-    # replicates to all devices
-    model, opt_state = jax.device_put_replicated((model, opt_state), devices)
+    # Replicate to all devices: add a leading device axis (size num_devices)
+    # that pmap maps onto the local devices.
+    model, opt_state = jax.tree_util.tree_map(
+        lambda x: jnp.broadcast_to(x, (num_devices, *x.shape)), (model, opt_state)
+    )
 
     # Prepare checkpoint dir
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))

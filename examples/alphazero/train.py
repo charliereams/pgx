@@ -362,8 +362,11 @@ if __name__ == "__main__":
         rng_key = ckpt["rng_key"]
         print(f"Resumed at iteration {iteration} ({frames} frames, {hours:.2f} hours)")
 
-    # replicates to all devices
-    model, opt_state = jax.device_put_replicated((model, opt_state), devices)
+    # Replicate to all devices: add a leading device axis (size num_devices)
+    # that pmap maps onto the local devices.
+    model, opt_state = jax.tree_util.tree_map(
+        lambda x: jnp.broadcast_to(x, (num_devices, *x.shape)), (model, opt_state)
+    )
 
     # Prepare checkpoint dir. When resuming, keep writing into the original
     # checkpoint's directory; otherwise create a fresh timestamped one.
