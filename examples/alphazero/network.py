@@ -77,17 +77,20 @@ class AZNet(hk.Module):
         num_blocks: int = 5,
         resnet_v2: bool = True,
         num_heads: int = -1,
+        num_attention_layers: int = 1,
         name="az_net",
     ):
         super().__init__(name=name)
-        print(f"Creating AZ model with num_heads={num_heads}")
+        print(f"Creating AZ model with num_heads={num_heads}, "
+              f"num_attention_layers={num_attention_layers}")
         self.num_actions = num_actions
         self.num_channels = num_channels
         self.num_blocks = num_blocks
         self.resnet_v2 = resnet_v2
-        # num_heads > 0 replaces the final convolution block with a
-        # multi-head self-attention block (using that many heads).
+        # num_heads > 0 replaces the final num_attention_layers convolution
+        # blocks with multi-head self-attention blocks (using that many heads).
         self.num_heads = num_heads
+        self.num_attention_layers = num_attention_layers
         self.resnet_cls = BlockV2 if resnet_v2 else BlockV1
 
     def __call__(self, x, is_training, test_local_stats):
@@ -98,9 +101,12 @@ class AZNet(hk.Module):
             x = hk.BatchNorm(True, True, 0.9)(x, is_training, test_local_stats)
             x = jax.nn.relu(x)
 
+        # The last num_attention_layers blocks become self-attention blocks
+        # (when num_heads > 0); the earlier blocks stay convolutional.
+        first_attention_block = self.num_blocks - self.num_attention_layers
         for i in range(self.num_blocks):
-            is_last = i == self.num_blocks - 1
-            if self.num_heads > 0 and is_last:
+            is_attention = self.num_heads > 0 and i >= first_attention_block
+            if is_attention:
                 x = SelfAttentionBlock(self.num_channels, self.num_heads, name=f"block_{i}")(
                     x, is_training, test_local_stats
                 )

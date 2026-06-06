@@ -80,6 +80,7 @@ def forward_fn(x, is_eval=False):
         num_blocks=config.num_layers,
         resnet_v2=config.resnet_v2,
         num_heads=config.num_heads,
+        num_attention_layers=config.num_attention_layers,
     )
     policy_out, value_out = net(x, is_training=not is_eval, test_local_stats=False)
     return policy_out, value_out
