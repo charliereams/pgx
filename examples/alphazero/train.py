@@ -428,6 +428,9 @@ if __name__ == "__main__":
         rng_key, subkey = jax.random.split(rng_key)
         keys = jax.random.split(subkey, num_devices)
         data: SelfplayOutput = selfplay(model, keys)
+        # Fraction of game slots that reached a terminal state within
+        # max_num_steps; the rest hit the step limit and were truncated.
+        terminate_rate = data.terminated.any(axis=1).mean().item()
         samples: Sample = compute_loss_input(data)
 
         # Shuffle samples and make minibatches
@@ -463,6 +466,7 @@ if __name__ == "__main__":
             {
                 "train/policy_loss": policy_loss,
                 "train/value_loss": value_loss,
+                "train/terminate_rate": terminate_rate,
                 "hours": hours,
                 "frames": frames,
             }
