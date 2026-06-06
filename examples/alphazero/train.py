@@ -15,6 +15,7 @@
 import datetime
 import os
 import pickle
+import signal
 import time
 from functools import partial
 from typing import NamedTuple
@@ -299,7 +300,28 @@ def evaluate(rng_key, my_model):
     return R
 
 
+# Set by the SIGINT handler to request a clean shutdown: the training loop
+# finishes the current iteration, writes a checkpoint, then exits. A second
+# Ctrl+C forces an immediate exit (no final checkpoint).
+_stop_requested = False
+
+
+def _request_stop(signum, frame):
+    global _stop_requested
+    if _stop_requested:
+        print("\nSecond interrupt received -- exiting immediately (no checkpoint).")
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        raise KeyboardInterrupt
+    _stop_requested = True
+    print(
+        "\nInterrupt received -- will finish the current iteration, write a "
+        "checkpoint, then exit. Press Ctrl+C again to exit immediately."
+    )
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, _request_stop)
+
     # Load checkpoint up front (if resuming) so we can also recover the wandb run id
     ckpt = None
     if config.resume_from:
@@ -353,6 +375,24 @@ if __name__ == "__main__":
         ckpt_dir = os.path.join("checkpoints", f"{config.env_id}_{now}")
     os.makedirs(ckpt_dir, exist_ok=True)
 
+    def save_checkpoint(iteration, rng_key, model, opt_state, frames, hours):
+        model_0, opt_state_0 = jax.tree_util.tree_map(lambda x: x[0], (model, opt_state))
+        with open(os.path.join(ckpt_dir, f"{iteration:06d}.ckpt"), "wb") as f:
+            dic = {
+                "config": config,
+                "rng_key": rng_key,
+                "model": jax.device_get(model_0),
+                "opt_state": jax.device_get(opt_state_0),
+                "iteration": iteration,
+                "frames": frames,
+                "hours": hours,
+                "wandb_run_id": wandb.run.id,
+                "pgx.__version__": pgx.__version__,
+                "env_id": env.id,
+                "env_version": env.version,
+            }
+            pickle.dump(dic, f)
+
     # Initialize logging dict
     log = {"iteration": iteration, "hours": hours, "frames": frames}
 
@@ -372,22 +412,7 @@ if __name__ == "__main__":
             )
 
             # Store checkpoints
-            model_0, opt_state_0 = jax.tree_util.tree_map(lambda x: x[0], (model, opt_state))
-            with open(os.path.join(ckpt_dir, f"{iteration:06d}.ckpt"), "wb") as f:
-                dic = {
-                    "config": config,
-                    "rng_key": rng_key,
-                    "model": jax.device_get(model_0),
-                    "opt_state": jax.device_get(opt_state_0),
-                    "iteration": iteration,
-                    "frames": frames,
-                    "hours": hours,
-                    "wandb_run_id": wandb.run.id,
-                    "pgx.__version__": pgx.__version__,
-                    "env_id": env.id,
-                    "env_version": env.version,
-                }
-                pickle.dump(dic, f)
+            save_checkpoint(iteration, rng_key, model, opt_state, frames, hours)
 
         print(log)
         wandb.log(log)
@@ -442,3 +467,10 @@ if __name__ == "__main__":
                 "frames": frames,
             }
         )
+
+        if _stop_requested:
+            print(log)
+            wandb.log(log)
+            print(f"Saving checkpoint at iteration {iteration} before exiting...")
+            save_checkpoint(iteration, rng_key, model, opt_state, frames, hours)
+            break
