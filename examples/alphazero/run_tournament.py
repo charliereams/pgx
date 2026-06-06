@@ -54,9 +54,9 @@ class TourneyConfig(BaseModel):
     #   random  -> RandomAgent
     #   me      -> KeyboardAgent (human at the keyboard)
     #   model   -> a trained ModelAgent; each successive 'model' gets the next
-    #              index passed to loadModelBasedAgent (0, 1, 2, ...).
-    # e.g. players="model,model,me,model" -> loadModelBasedAgent(0), KeyboardAgent,
-    #      loadModelBasedAgent(1), loadModelBasedAgent(2).
+    #              index passed to load_model_based_agent (0, 1, 2, ...).
+    # e.g. players="model,model,me,model" -> load_model_based_agent(0), KeyboardAgent,
+    #      load_model_based_agent(1), load_model_based_agent(2).
     players: str = "random,model"
     # Comma-separated, fully-qualified checkpoint paths for the 'model' seats.
     # They are applied round-robin: the n-th model seat uses paths[n % len(paths)],
@@ -71,7 +71,7 @@ class MctsConfig(NamedTuple):
 
 class Cli(ABC):
     @abstractmethod
-    def getActionId(self) -> int | None:
+    def get_action_id(self) -> int | None:
         pass
 
     @abstractmethod
@@ -79,7 +79,7 @@ class Cli(ABC):
         pass
 
     @abstractmethod
-    def loadModelBasedAgent(self, player_num, model_path):
+    def load_model_based_agent(self, player_num, model_path):
         pass
 
     @abstractmethod
@@ -149,7 +149,7 @@ class GessCli(Cli):
         else:
             # The chosen source square is recorded in the state, so derive its
             # label from there. This keeps describe_action's "moved <src> -> ..."
-            # correct for model players, which never go through getActionId.
+            # correct for model players, which never go through get_action_id.
             self._src_label = _gess_idx_to_label(source)
 
         src_r, src_c = source // _GESS_SIZE, source % _GESS_SIZE
@@ -186,7 +186,7 @@ class GessCli(Cli):
             print(f"  {player} to move.")
         print()
 
-    def getActionId(self) -> int | None:
+    def get_action_id(self) -> int | None:
         if self._stage == 0:
             raw = input("Move (e.g. c7-e9) or source (e.g. c7): ").strip().lower()
             if '-' in raw:
@@ -250,13 +250,13 @@ class GessCli(Cli):
         print(header)
         print("")
 
-    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
+    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class DomineeringCli(Cli):
-    def getActionId(self) -> int | None:
+    def get_action_id(self) -> int | None:
         square_code = input("Move: ")
         col = ord(square_code[0]) - ord('a')
         row = int(square_code[1]) - 1
@@ -287,13 +287,13 @@ class DomineeringCli(Cli):
         ))
         print("")
 
-    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
+    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHexCli(Cli):
-    def getActionId(self) -> int | None:
+    def get_action_id(self) -> int | None:
         name = input("Move: ")
         m = re.fullmatch("([0-9]+) on ([0-9]+)", name)
         if m is None:
@@ -322,13 +322,13 @@ class GHexCli(Cli):
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
-    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
+    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHex2Cli(Cli):
-    def getActionId(self) -> int | None:
+    def get_action_id(self) -> int | None:
         name = input("Move: ")
         m = re.fullmatch("([0-9]+) on ([0-9]+)", name)  # TODO: allow * as tile
         if m is None:
@@ -357,13 +357,13 @@ class GHex2Cli(Cli):
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
-    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
+    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class PigCli(Cli):
-    def getActionId(self) -> int | None:
+    def get_action_id(self) -> int | None:
         choice = input("Roll again or stop? [r/s]: ").strip().lower()
         if choice in ("r", "roll", "continue"):
             return 1
@@ -387,12 +387,12 @@ class PigCli(Cli):
     def describe_action(self, action: jnp.ndarray) -> str:
         return "stopped" if action[0] == 0 else "rolled again"
 
-    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
+    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
         raise NotImplementedError("No trained Pig model available yet")
 
 
 #class HeckmeckCli(Cli):
-#    def getActionId(self) -> int | None:
+#    def get_action_id(self) -> int | None:
 #
 #    def display(self, state: pgx.State) -> None:
 #        print(f"To play: P{state.current_player[0]}")
@@ -407,7 +407,7 @@ class PigCli(Cli):
 #        return f"took action {action[0]}: {_HECKMECK_ACTION_NAMES[action[0]]}"
 
 
-def GetCli(env_id: pgx.EnvId) -> Cli:
+def get_cli(env_id: pgx.EnvId) -> Cli:
     match env_id:
         case "gess":
             return GessCli()
@@ -427,11 +427,11 @@ def GetCli(env_id: pgx.EnvId) -> Cli:
 
 class Agent(ABC):
     @abstractmethod
-    def getName(self) -> str:
+    def get_name(self) -> str:
         pass
 
     @abstractmethod
-    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
+    def get_action(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         pass
 
 
@@ -439,10 +439,10 @@ class KeyboardAgent(Agent):
     def __init__(self, cli: Cli) -> None:
         self.cli = cli
 
-    def getName(self) -> str:
+    def get_name(self) -> str:
         return "Human"
 
-    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
+    def get_action(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         legal = state.legal_action_mask[0]
         forced = jnp.where(legal)[0]
         if len(forced) == 1:
@@ -450,7 +450,7 @@ class KeyboardAgent(Agent):
         action_i = None
         while action_i is None or not legal[action_i]:
             try:
-                action_i = self.cli.getActionId()
+                action_i = self.cli.get_action_id()
             except Exception as e:
                 print(f"fail: {e}")
                 action_i = None
@@ -458,10 +458,10 @@ class KeyboardAgent(Agent):
 
 
 class RandomAgent(Agent):
-    def getName(self) -> str:
+    def get_name(self) -> str:
         return "Rando"
 
-    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
+    def get_action(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         action_i = None
         while action_i is None or not state.legal_action_mask[0][action_i]:
             action_i = random.randint(0, len(state.legal_action_mask[0]) - 1)
@@ -526,10 +526,10 @@ class ModelAgent(Agent):
         self.mcts = partial(ModelAgent._run_mcts, forward, recurrent_fn, mcts_config, model, self.cli) # Unjitted, for debugging.
         self.mcts_jit = jax.jit(self.mcts)
 
-    def getName(self) -> str:
+    def get_name(self) -> str:
         return f"Model[{self.name_prefix}:sims={self.mcts_config.num_simulations}]"
 
-    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
+    def get_action(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         # Debug view into the policy evaluation: (slow)
         self.mcts(key, state, print_debug_info=True)
         start_time = time.perf_counter()
@@ -643,7 +643,7 @@ def build_agents(players: str, model_paths: list[str], cli: Cli) -> list[Agent]:
                     "Pass models=<path1>[,<path2>,...]."
                 )
             path = model_paths[model_index % len(model_paths)]
-            agents.append(cli.loadModelBasedAgent(model_index, path))
+            agents.append(cli.load_model_based_agent(model_index, path))
             model_index += 1
         else:
             raise ValueError(
@@ -662,7 +662,7 @@ if __name__ == "__main__":
     tourney_config: TourneyConfig = TourneyConfig(**tourney_conf_dict)
     print(tourney_config)
 
-    cli = GetCli(tourney_config.env_id)
+    cli = get_cli(tourney_config.env_id)
 
     devices = jax.local_devices()
 
@@ -695,9 +695,9 @@ if __name__ == "__main__":
                 return state._x.winner
 
             agent = agents[state.current_player[0]]
-            print(f"{_ORANGE}Turn {turn_num}: {agent.getName()} to play because current_player={state.current_player[0]}...{_RESET}", flush=True)
-            action = agent.getAction(key, state)
-            print(f"{agent.getName()} {_GREEN}{cli.describe_action(action)}{_RESET}\n")
+            print(f"{_ORANGE}Turn {turn_num}: {agent.get_name()} to play because current_player={state.current_player[0]}...{_RESET}", flush=True)
+            action = agent.get_action(key, state)
+            print(f"{agent.get_name()} {_GREEN}{cli.describe_action(action)}{_RESET}\n")
 
             key, subkey = jax.random.split(key)
             state = step_fn(state, action, jax.random.split(subkey, 1))
@@ -710,7 +710,7 @@ if __name__ == "__main__":
     for game_num in range(0, tourney_config.games):
         rotation_pos = game_num % len(agents)
         game_agents = agents[rotation_pos:] + agents[:rotation_pos]
-        print(f"{_ORANGE}Game {game_num} of {tourney_config.games}: {" vs ".join([agent.getName() for agent in game_agents])}{_RESET}")
+        print(f"{_ORANGE}Game {game_num} of {tourney_config.games}: {" vs ".join([agent.get_name() for agent in game_agents])}{_RESET}")
 
         winner = run_game(game_num, game_agents, 0)  # TODO: more interesting start depths
         for w in range(0, len(agents)):
@@ -720,4 +720,4 @@ if __name__ == "__main__":
         print(f"""#######################################################################
                   Win rates after {1 + game_num} {'game' if game_num == 0 else 'games'}:""")
         for w in range(0, len(agents)):
-            print(f"       {agents[w].getName():>20}: {win_rates[w]:6.2f}% ({wins[w]})", flush=True)
+            print(f"       {agents[w].get_name():>20}: {win_rates[w]:6.2f}% ({wins[w]})", flush=True)
