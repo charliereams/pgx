@@ -30,6 +30,7 @@ from omegaconf import OmegaConf
 from pgx.g_hex import black
 from pgx.g_hex2 import black2
 from pydantic import BaseModel
+from config import Config
 from network import AZNet
 from abc import ABC, abstractmethod
 
@@ -50,28 +51,6 @@ class TourneyConfig(BaseModel):
     # They are applied round-robin: the n-th model seat uses paths[n % len(paths)],
     # so one path is shared by all models, two paths alternate, etc.
     models: str = ""
-
-
-class Config(BaseModel):
-    env_id: pgx.EnvId = "g_hex"
-    seed: int = 0
-    max_num_iters: int = 400
-    # network params
-    num_channels: int = 128
-    num_layers: int = 6
-    resnet_v2: bool = True
-    # selfplay params
-    selfplay_batch_size: int = 1024
-    num_simulations: int = 32
-    max_num_steps: int = 256
-    # training params
-    training_batch_size: int = 4096
-    learning_rate: float = 0.001
-    # eval params
-    eval_interval: int = 5
-
-    class Config:
-        extra = "forbid"
 
 
 class MctsConfig(NamedTuple):
@@ -451,8 +430,7 @@ class ModelAgent(Agent):
                 num_channels=config.num_channels,
                 num_blocks=config.num_layers,
                 resnet_v2=config.resnet_v2,
-                # Older checkpoints predate num_heads; default to all-conv.
-                num_heads=getattr(config, "num_heads", -1),
+                num_heads=config.num_heads,
             )
             policy_out, value_out = net(x, is_training=not is_eval, test_local_stats=False)
             return policy_out, value_out
@@ -559,7 +537,10 @@ class ModelAgent(Agent):
 def load_from_checkpoint(path):
   with open(path, "rb") as f:
       ckpt = pickle.load(f)
-      return ckpt["config"], ckpt["model"]
+  # Rehydrate through the current Config so checkpoints predating newer fields
+  # (e.g. num_heads) come back with those fields populated to their defaults.
+  config = Config(**ckpt["config"].__dict__)
+  return config, ckpt["model"]
 
 def readable_domineering_board(state):
   board = state._x.board[0]
