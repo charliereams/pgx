@@ -377,7 +377,9 @@ if __name__ == "__main__":
 
     def save_checkpoint(iteration, rng_key, model, opt_state, frames, hours):
         model_0, opt_state_0 = jax.tree_util.tree_map(lambda x: x[0], (model, opt_state))
-        with open(os.path.join(ckpt_dir, f"{iteration:06d}.ckpt"), "wb") as f:
+        ckpt_path = os.path.join(ckpt_dir, f"{iteration:06d}.ckpt")
+        print(f"Saving checkpoint: {os.path.relpath(ckpt_path)}")
+        with open(ckpt_path, "wb") as f:
             dic = {
                 "config": config,
                 "rng_key": rng_key,
