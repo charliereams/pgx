@@ -38,7 +38,7 @@ num_devices = len(devices)
 
 
 class Config(BaseModel):
-    env_id: pgx.EnvId = "go_9x9"
+    env_id: pgx.EnvId = "g_hex"
     seed: int = 0
     max_num_iters: int = 400
     # path to a .ckpt file to resume training from (empty = start from scratch)

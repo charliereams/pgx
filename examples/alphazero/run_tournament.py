@@ -58,7 +58,7 @@ class Config(BaseModel):
     max_num_iters: int = 400
     # network params
     num_channels: int = 128
-    num_layers: int = 8
+    num_layers: int = 6
     resnet_v2: bool = True
     # selfplay params
     selfplay_batch_size: int = 1024
