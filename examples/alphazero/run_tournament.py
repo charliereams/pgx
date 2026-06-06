@@ -38,6 +38,8 @@ from abc import ABC, abstractmethod
 _GREEN = "\033[32m"
 _ORANGE = "\033[38;5;208m"  # 256-color orange for major game-event lines
 _GREY = "\033[38;5;245m"   # dim grey for verbose debug info (action weights, value)
+_BLUE_BRIGHT = "\033[38;5;39m"  # most likely move
+_BLUE_DIM = "\033[38;5;67m"     # next few likely moves
 _RESET = "\033[0m"
 
 
@@ -213,16 +215,29 @@ class GessCli(Cli):
         # which is the whole action space, so render the entire grid with file/row
         # labels matching the board so moves are easy to eyeball. Invalid actions
         # are masked to exactly-zero weight, so show those cells blank rather than
-        # as 0.00%.
+        # as 0.00%. The most likely move is highlighted in bright blue and the
+        # next five in a dimmer blue.
         grid = np.asarray(action_weights).reshape(_GESS_SIZE, _GESS_SIZE)
+        # Rank legal (nonzero) actions high->low; top one is bright, next five dim.
+        flat = grid.ravel()
+        ranked = [i for i in np.argsort(flat)[::-1] if flat[i] != 0]
+        highlight = {i: _BLUE_DIM for i in ranked[1:6]}
+        if ranked:
+            highlight[ranked[0]] = _BLUE_BRIGHT
         cell_w = 9
         header = " " * 4 + "".join(f"{_GESS_COLS[c]:^{cell_w}}" for c in range(_GESS_SIZE))
+
+        def fmt(flat_idx, w):
+            if w == 0:
+                return " " * cell_w
+            text = f"{100*w:6.2f}%  "
+            color = highlight.get(flat_idx)
+            # Restore grey (the surrounding debug colour) after a highlighted cell.
+            return f"{color}{text}{_GREY}" if color else text
+
         print(header)
         for r in range(_GESS_SIZE):
-            cells = "".join(
-                f"{100*w:6.2f}%  " if w != 0 else " " * cell_w
-                for w in grid[r]
-            )
+            cells = "".join(fmt(r * _GESS_SIZE + c, w) for c, w in enumerate(grid[r]))
             print(f"{_GESS_SIZE - r:>3} {cells}")
         print(header)
         print("")
