@@ -34,6 +34,11 @@ from config import Config
 from network import AZNet
 from abc import ABC, abstractmethod
 
+# ANSI colors for terminal output.
+_GREEN = "\033[32m"
+_ORANGE = "\033[38;5;208m"  # 256-color orange for major game-event lines
+_RESET = "\033[0m"
+
 
 class TourneyConfig(BaseModel):
     env_id: pgx.EnvId = "g_hex"
@@ -633,13 +638,13 @@ if __name__ == "__main__":
             cli.display(state)
 
             if state.terminated.all():
-                print(f"Game over! winner={state._x.winner} rewards={state.rewards}")
+                print(f"{_ORANGE}Game over! winner={state._x.winner} rewards={state.rewards}{_RESET}")
                 return state._x.winner
 
             agent = agents[state.current_player[0]]
-            print(f"Turn {turn_num}: {agent.getName()} to play because current_player={state.current_player[0]}...", flush=True)
+            print(f"{_ORANGE}Turn {turn_num}: {agent.getName()} to play because current_player={state.current_player[0]}...{_RESET}", flush=True)
             action = agent.getAction(key, state)
-            print(f"{agent.getName()} {cli.describe_action(action)}\n")
+            print(f"{agent.getName()} {_GREEN}{cli.describe_action(action)}{_RESET}\n")
 
             key, subkey = jax.random.split(key)
             state = step_fn(state, action, jax.random.split(subkey, 1))
@@ -652,7 +657,7 @@ if __name__ == "__main__":
     for game_num in range(0, tourney_config.games):
         rotation_pos = game_num % len(agents)
         game_agents = agents[rotation_pos:] + agents[:rotation_pos]
-        print(f"Game {game_num} of {tourney_config.games}: {" vs ".join([agent.getName() for agent in game_agents])}")
+        print(f"{_ORANGE}Game {game_num} of {tourney_config.games}: {" vs ".join([agent.getName() for agent in game_agents])}{_RESET}")
 
         winner = run_game(game_num, game_agents, 0)  # TODO: more interesting start depths
         for w in range(0, len(agents)):
