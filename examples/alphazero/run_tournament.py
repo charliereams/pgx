@@ -34,6 +34,9 @@ from config import Config
 from network import AZNet
 from abc import ABC, abstractmethod
 
+# A Haiku model is a (params, state) pair, as returned by forward.init.
+Model = tuple[hk.Params, hk.State]
+
 # ANSI colors for terminal output.
 _GREEN = "\033[32m"
 _ORANGE = "\033[38;5;208m"  # 256-color orange for major game-event lines
@@ -68,11 +71,11 @@ class MctsConfig(NamedTuple):
 
 class Cli(ABC):
     @abstractmethod
-    def getActionId(self):
+    def getActionId(self) -> int | None:
         pass
 
     @abstractmethod
-    def display(self, state):
+    def display(self, state: pgx.State) -> None:
         pass
 
     @abstractmethod
@@ -80,10 +83,10 @@ class Cli(ABC):
         pass
 
     @abstractmethod
-    def describe_action(self, action) -> str:
+    def describe_action(self, action: jnp.ndarray) -> str:
         pass
 
-    def display_action_weights(self, action_weights):
+    def display_action_weights(self, action_weights: jnp.ndarray) -> None:
         """Print a game-specific view of the MCTS policy output.
 
         Called by ModelAgent after each move. The default is a no-op; games
@@ -130,12 +133,12 @@ class GessCli(Cli):
     and used automatically at the next stage).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._stage = 0          # updated by display()
         self._src_label: str | None = None
         self._stashed_dst: int | None = None
 
-    def display(self, state):
+    def display(self, state: pgx.State) -> None:
         board = np.array(state._x.board[0]).reshape(_GESS_SIZE, _GESS_SIZE)
         stage  = int(state._x.stage[0])
         source = int(state._x.source[0])
@@ -183,7 +186,7 @@ class GessCli(Cli):
             print(f"  {player} to move.")
         print()
 
-    def getActionId(self):
+    def getActionId(self) -> int | None:
         if self._stage == 0:
             raw = input("Move (e.g. c7-e9) or source (e.g. c7): ").strip().lower()
             if '-' in raw:
@@ -208,14 +211,14 @@ class GessCli(Cli):
             raw = input(f"Destination (source={self._src_label}, e.g. e9): ").strip().lower()
             return _gess_label_to_idx(raw)
 
-    def describe_action(self, action) -> str:
+    def describe_action(self, action: jnp.ndarray) -> str:
         label = _gess_idx_to_label(int(action[0]))
         if self._stage == 0:
             return f"chose source {label}"
         else:
             return f"moved {self._src_label} → {label}"
 
-    def display_action_weights(self, action_weights):
+    def display_action_weights(self, action_weights: jnp.ndarray) -> None:
         # Actions are flat indices into the full 20x20 board (row_idx*20 + col),
         # which is the whole action space, so render the entire grid with file/row
         # labels matching the board so moves are easy to eyeball. Invalid actions
@@ -232,7 +235,7 @@ class GessCli(Cli):
         cell_w = 9
         header = " " * 4 + "".join(f"{_GESS_COLS[c]:^{cell_w}}" for c in range(_GESS_SIZE))
 
-        def fmt(flat_idx, w):
+        def fmt(flat_idx: int, w: float) -> str:
             if w == 0:
                 return " " * cell_w
             text = f"{100*w:6.2f}%  "
@@ -247,13 +250,13 @@ class GessCli(Cli):
         print(header)
         print("")
 
-    def loadModelBasedAgent(self, player_num, model_path):
+    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class DomineeringCli(Cli):
-    def getActionId(self):
+    def getActionId(self) -> int | None:
         square_code = input("Move: ")
         col = ord(square_code[0]) - ord('a')
         row = int(square_code[1]) - 1
@@ -261,7 +264,7 @@ class DomineeringCli(Cli):
             return None
         return row * 7 + col
 
-    def display(self, state):
+    def display(self, state: pgx.State) -> None:
         print("   abcdefgh")
         print("\n".join(
               f"{idx+1} |" + "".join("·" if cell else "■" for cell in row) + "|"
@@ -270,10 +273,10 @@ class DomineeringCli(Cli):
         print("")
 
 
-    def describe_action(self, action) -> str:
+    def describe_action(self, action: jnp.ndarray) -> str:
         return f"played {'abcdefgh'[action[0] % 7]}{1 + (action[0] // 7)}"
 
-    def display_action_weights(self, action_weights):
+    def display_action_weights(self, action_weights: jnp.ndarray) -> None:
         action_weights = jnp.hstack([
             action_weights.reshape(8, 7),
             jnp.zeros((8, 1), dtype=jnp.float32),
@@ -284,13 +287,13 @@ class DomineeringCli(Cli):
         ))
         print("")
 
-    def loadModelBasedAgent(self, player_num, model_path):
+    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHexCli(Cli):
-    def getActionId(self):
+    def getActionId(self) -> int | None:
         name = input("Move: ")
         m = re.fullmatch("([0-9]+) on ([0-9]+)", name)
         if m is None:
@@ -299,33 +302,33 @@ class GHexCli(Cli):
         triangle = int(m.group(2))
         return black(tile, triangle)
 
-    def display(self, state):
+    def display(self, state: pgx.State) -> None:
         print(env.pretty_game(state))
         print("")
         print(f"Black tiles remaining: {self._pretty_tiles(state._x.tiles[0][0])}")
         print(f"White tiles remaining: {self._pretty_tiles(state._x.tiles[0][1])}")
         print("")
 
-    def _pretty_tiles(self, tiles):
+    def _pretty_tiles(self, tiles: jnp.ndarray) -> str:
       return "  ".join([(f"{val:2}" if tiles[i] else "  ")
                        for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])])
 
-    def describe_action(self, action) -> str:
+    def describe_action(self, action: jnp.ndarray) -> str:
         return f"played the {1 + (action[0] % 10)} on triangle {action[0] // 10}"
 
-    def display_action_weights(self, action_weights):
+    def display_action_weights(self, action_weights: jnp.ndarray) -> None:
         action_weights = action_weights.reshape(21, 10)
         print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" if w != 0 else " " * 7 for w in tri_row])
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
-    def loadModelBasedAgent(self, player_num, model_path):
+    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHex2Cli(Cli):
-    def getActionId(self):
+    def getActionId(self) -> int | None:
         name = input("Move: ")
         m = re.fullmatch("([0-9]+) on ([0-9]+)", name)  # TODO: allow * as tile
         if m is None:
@@ -334,33 +337,33 @@ class GHex2Cli(Cli):
         triangle = int(m.group(2))
         return black2(tile, triangle)
 
-    def display(self, state):
+    def display(self, state: pgx.State) -> None:
         print(env.pretty_game(state))
         print("")
         print(f"Black tiles remaining: {self._pretty_tiles2(state._x.tiles[0][0])}")
         print(f"White tiles remaining: {self._pretty_tiles2(state._x.tiles[0][1])}")
         print("")
 
-    def _pretty_tiles2(self, tiles):
+    def _pretty_tiles2(self, tiles: jnp.ndarray) -> str:
       return "  ".join([(f"{val:2}" if tiles[i] else "  ")
                        for i, val in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20])])
 
-    def describe_action(self, action) -> str:
+    def describe_action(self, action: jnp.ndarray) -> str:
         return f"played the {1 + (action[0] % 11)} on triangle {action[0] // 11}"  # TODO: *
 
-    def display_action_weights(self, action_weights):
+    def display_action_weights(self, action_weights: jnp.ndarray) -> None:
         action_weights = action_weights.reshape(23, 11)
         print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" if w != 0 else " " * 7 for w in tri_row])
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
-    def loadModelBasedAgent(self, player_num, model_path):
+    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class PigCli(Cli):
-    def getActionId(self):
+    def getActionId(self) -> int | None:
         choice = input("Roll again or stop? [r/s]: ").strip().lower()
         if choice in ("r", "roll", "continue"):
             return 1
@@ -368,7 +371,7 @@ class PigCli(Cli):
             return 0
         return None
 
-    def display(self, state):
+    def display(self, state: pgx.State) -> None:
         totals = state._x.totals[0]
         last_roll = int(state._x.last_roll[0])
         turn_total = int(state._x.turn_total[0])
@@ -381,17 +384,17 @@ class PigCli(Cli):
             print(f"Player {current}'s turn: last rolled {last_roll}, turn total = {turn_total}")
         print("")
 
-    def describe_action(self, action) -> str:
+    def describe_action(self, action: jnp.ndarray) -> str:
         return "stopped" if action[0] == 0 else "rolled again"
 
-    def loadModelBasedAgent(self, player_num, model_path):
+    def loadModelBasedAgent(self, player_num: int, model_path: str) -> "ModelAgent":
         raise NotImplementedError("No trained Pig model available yet")
 
 
 #class HeckmeckCli(Cli):
-#    def getActionId(self):
+#    def getActionId(self) -> int | None:
 #
-#    def display(self, state):
+#    def display(self, state: pgx.State) -> None:
 #        print(f"To play: P{state.current_player[0]}")
 #        print(f"Grill: {state._x.grill[0] * HECKMECK_TILE_VALS}")
 #        print(f"Player stacks: P0={state._x.stacks[0][0]}")
@@ -400,7 +403,7 @@ class PigCli(Cli):
 #        print(f"Dice taken:  {state._x.dice_taken[0]}")
 #        print(f"Dice rolled: {state._x.dice_rolled[0]}")
 #
-#    def describe_action(self, action) -> str:
+#    def describe_action(self, action: jnp.ndarray) -> str:
 #        return f"took action {action[0]}: {_HECKMECK_ACTION_NAMES[action[0]]}"
 
 
@@ -424,22 +427,22 @@ def GetCli(env_id: pgx.EnvId) -> Cli:
 
 class Agent(ABC):
     @abstractmethod
-    def getName(self):
+    def getName(self) -> str:
         pass
 
     @abstractmethod
-    def getAction(self, key, state):
+    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         pass
 
 
 class KeyboardAgent(Agent):
-    def __init__(self, cli):
+    def __init__(self, cli: Cli) -> None:
         self.cli = cli
 
-    def getName(self):
+    def getName(self) -> str:
         return "Human"
 
-    def getAction(self, key, state):
+    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         legal = state.legal_action_mask[0]
         forced = jnp.where(legal)[0]
         if len(forced) == 1:
@@ -455,10 +458,10 @@ class KeyboardAgent(Agent):
 
 
 class RandomAgent(Agent):
-    def getName(self):
+    def getName(self) -> str:
         return "Rando"
 
-    def getAction(self, key, state):
+    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         action_i = None
         while action_i is None or not state.legal_action_mask[0][action_i]:
             action_i = random.randint(0, len(state.legal_action_mask[0]) - 1)
@@ -468,8 +471,15 @@ class RandomAgent(Agent):
 
 
 class ModelAgent(Agent):
-    def __init__(self, name_prefix, mcts_config: MctsConfig, config: Config, model, cli):
-        def forward_fn(x, is_eval=False):
+    def __init__(
+        self,
+        name_prefix: str,
+        mcts_config: MctsConfig,
+        config: Config,
+        model: Model,
+        cli: Cli,
+    ) -> None:
+        def forward_fn(x: jnp.ndarray, is_eval: bool = False) -> tuple[jnp.ndarray, jnp.ndarray]:
             net = AZNet(
                 num_actions=env.num_actions,
                 num_channels=config.num_channels,
@@ -483,7 +493,9 @@ class ModelAgent(Agent):
 
         forward = hk.without_apply_rng(hk.transform_with_state(forward_fn))
 
-        def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.State):
+        def recurrent_fn(
+            model: Model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.State
+        ) -> tuple[mctx.RecurrentFnOutput, pgx.State]:
             del rng_key
             model_params, model_state = model
 
@@ -514,10 +526,10 @@ class ModelAgent(Agent):
         self.mcts = partial(ModelAgent._run_mcts, forward, recurrent_fn, mcts_config, model, self.cli) # Unjitted, for debugging.
         self.mcts_jit = jax.jit(self.mcts)
 
-    def getName(self):
+    def getName(self) -> str:
         return f"Model[{self.name_prefix}:sims={self.mcts_config.num_simulations}]"
 
-    def getAction(self, key, state):
+    def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         # Debug view into the policy evaluation: (slow)
         # self.mcts(key, state, print_debug_info=True)
         start_time = time.perf_counter()
@@ -531,7 +543,16 @@ class ModelAgent(Agent):
         return policy_output.action
 
     @staticmethod  # Static for JITting.
-    def _run_mcts(forward, recurrent_fn, mcts_config, model, cli, key, state, print_debug_info=False):
+    def _run_mcts(
+        forward: hk.TransformedWithState,
+        recurrent_fn: mctx.RecurrentFn,
+        mcts_config: MctsConfig,
+        model: Model,
+        cli: Cli,
+        key: jnp.ndarray,
+        state: pgx.State,
+        print_debug_info: bool = False,
+    ) -> tuple[mctx.PolicyOutput, jnp.ndarray] | None:
         key, subkey = jax.random.split(key)
         keys = jax.random.split(subkey, 1)  # Batch size must be 1
         key, subkey = jax.random.split(key)
@@ -571,7 +592,7 @@ class ModelAgent(Agent):
         return policy_output, value
 
 
-def load_from_checkpoint(path):
+def load_from_checkpoint(path: str) -> tuple[Config, Model]:
   with open(path, "rb") as f:
       ckpt = pickle.load(f)
   # Rehydrate through the current Config so checkpoints predating newer fields
@@ -579,7 +600,7 @@ def load_from_checkpoint(path):
   config = Config(**ckpt["config"].__dict__)
   return config, ckpt["model"]
 
-def readable_domineering_board(state):
+def readable_domineering_board(state: pgx.State) -> jnp.ndarray:
   board = state._x.board[0]
   return jax.lax.select(state.current_player[0] == 0, board, board.transpose())
 
@@ -600,14 +621,14 @@ _HECKMECK_ACTION_NAMES = [
     "Busted",
 ]
 
-def build_agents(players: str, model_paths: list, cli) -> list:
+def build_agents(players: str, model_paths: list[str], cli: Cli) -> list[Agent]:
     """Parse a players spec like "random,me,model,model" into a list of agents.
 
     Each successive 'model' token is given the next integer index and a
     checkpoint path chosen round-robin from model_paths, so one path is shared
     by every model seat, two paths alternate between seats, and so on.
     """
-    agents = []
+    agents: list[Agent] = []
     model_index = 0
     for token in players.split(","):
         kind = token.strip().lower()
@@ -651,7 +672,7 @@ if __name__ == "__main__":
 
     print("\n\nLet's play!\n\n\n")
 
-    def run_game(game_num, agents, start_depth):
+    def run_game(game_num: int, agents: list[Agent], start_depth: int) -> jnp.ndarray:
         key = jax.random.PRNGKey(tourney_config.seed ^ game_num)
         key, subkey = jax.random.split(key)
         state: pgx.State = init_fn(jax.random.split(subkey, 1))
