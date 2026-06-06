@@ -208,6 +208,25 @@ class GessCli(Cli):
         else:
             return f"moved {self._src_label} → {label}"
 
+    def display_action_weights(self, action_weights):
+        # Actions are flat indices into the full 20x20 board (row_idx*20 + col),
+        # which is the whole action space, so render the entire grid with file/row
+        # labels matching the board so moves are easy to eyeball. Invalid actions
+        # are masked to exactly-zero weight, so show those cells blank rather than
+        # as 0.00%.
+        grid = np.asarray(action_weights).reshape(_GESS_SIZE, _GESS_SIZE)
+        cell_w = 9
+        header = " " * 4 + "".join(f"{_GESS_COLS[c]:^{cell_w}}" for c in range(_GESS_SIZE))
+        print(header)
+        for r in range(_GESS_SIZE):
+            cells = "".join(
+                f"{100*w:6.2f}%  " if w != 0 else " " * cell_w
+                for w in grid[r]
+            )
+            print(f"{_GESS_SIZE - r:>3} {cells}")
+        print(header)
+        print("")
+
     def loadModelBasedAgent(self, player_num, model_path):
         config, model = load_from_checkpoint(model_path)
         return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
