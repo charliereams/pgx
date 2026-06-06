@@ -422,7 +422,7 @@ def get_cli(env_id: pgx.EnvId) -> Cli:
         #case "heckmeck":
         #    return HeckmeckCli()
         case _:
-            raise f"No CLI support for f{env_id}"
+            raise ValueError(f"No CLI support for {env_id}")
 
 
 class Agent(ABC):
