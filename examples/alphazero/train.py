@@ -18,6 +18,7 @@ import pickle
 import signal
 import time
 from functools import partial
+from types import FrameType
 from typing import NamedTuple
 
 import haiku as hk
@@ -33,8 +34,11 @@ from pgx.experimental import auto_reset
 from config import Config
 from network import AZNet
 
+# A Haiku model is a (params, state) pair, as returned by forward.init.
+Model = tuple[hk.Params, hk.State]
+
 devices = jax.local_devices()
-num_devices = len(devices)
+num_devices: int = len(devices)
 
 
 conf_dict = OmegaConf.from_cli()
@@ -73,7 +77,7 @@ env = pgx.make(config.env_id)
 baseline = pgx.make_baseline_model(config.env_id + "_v0")
 
 
-def forward_fn(x, is_eval=False):
+def forward_fn(x: jnp.ndarray, is_eval: bool = False) -> tuple[jnp.ndarray, jnp.ndarray]:
     net = AZNet(
         num_actions=env.num_actions,
         num_channels=config.num_channels,
@@ -90,7 +94,9 @@ forward = hk.without_apply_rng(hk.transform_with_state(forward_fn))
 optimizer = optax.adam(learning_rate=config.learning_rate)
 
 
-def recurrent_fn(model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.State):
+def recurrent_fn(
+    model: Model, rng_key: jnp.ndarray, action: jnp.ndarray, state: pgx.State
+) -> tuple[mctx.RecurrentFnOutput, pgx.State]:
     # model: params
     # state: embedding
     del rng_key
@@ -129,11 +135,11 @@ class SelfplayOutput(NamedTuple):
 
 
 @jax.pmap
-def selfplay(model, rng_key: jnp.ndarray) -> SelfplayOutput:
+def selfplay(model: Model, rng_key: jnp.ndarray) -> SelfplayOutput:
     model_params, model_state = model
     batch_size = config.selfplay_batch_size // num_devices
 
-    def step_fn(state, key) -> SelfplayOutput:
+    def step_fn(state: pgx.State, key: jnp.ndarray) -> tuple[pgx.State, SelfplayOutput]:
         key1, key2 = jax.random.split(key)
         observation = state.observation
 
@@ -192,7 +198,7 @@ def compute_loss_input(data: SelfplayOutput) -> Sample:
     value_mask = jnp.cumsum(data.terminated[::-1, :], axis=0)[::-1, :] >= 1
 
     # Compute value target
-    def body_fn(carry, i):
+    def body_fn(carry: jnp.ndarray, i: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         ix = config.max_num_steps - i - 1
         v = data.reward[ix] + data.discount[ix] * carry
         return v, v
@@ -212,7 +218,9 @@ def compute_loss_input(data: SelfplayOutput) -> Sample:
     )
 
 
-def loss_fn(model_params, model_state, samples: Sample):
+def loss_fn(
+    model_params: hk.Params, model_state: hk.State, samples: Sample
+) -> tuple[jnp.ndarray, tuple[hk.State, jnp.ndarray, jnp.ndarray]]:
     (logits, value), model_state = forward.apply(
         model_params, model_state, samples.obs, is_eval=False
     )
@@ -227,7 +235,9 @@ def loss_fn(model_params, model_state, samples: Sample):
 
 
 @partial(jax.pmap, axis_name="i")
-def train(model, opt_state, data: Sample):
+def train(
+    model: Model, opt_state: optax.OptState, data: Sample
+) -> tuple[Model, optax.OptState, jnp.ndarray, jnp.ndarray]:
     model_params, model_state = model
     grads, (model_state, policy_loss, value_loss) = jax.grad(loss_fn, has_aux=True)(
         model_params, model_state, data
@@ -240,7 +250,7 @@ def train(model, opt_state, data: Sample):
 
 
 @jax.pmap
-def evaluate(rng_key, my_model):
+def evaluate(rng_key: jnp.ndarray, my_model: Model) -> jnp.ndarray:
     """A simplified evaluation by sampling. Only for debugging.
     Please use MCTS and run tournaments for serious evaluation."""
     my_player = 0
@@ -251,7 +261,9 @@ def evaluate(rng_key, my_model):
     keys = jax.random.split(subkey, batch_size)
     state = jax.vmap(env.init)(keys)
 
-    def body_fn(val):
+    def body_fn(
+        val: tuple[jnp.ndarray, pgx.State, jnp.ndarray]
+    ) -> tuple[jnp.ndarray, pgx.State, jnp.ndarray]:
         key, state, R = val
         (my_logits, _), _ = forward.apply(
             my_model_params, my_model_state, state.observation, is_eval=True
@@ -277,7 +289,7 @@ def evaluate(rng_key, my_model):
 _stop_requested = False
 
 
-def _request_stop(signum, frame):
+def _request_stop(signum: int, frame: FrameType | None) -> None:
     global _stop_requested
     if _stop_requested:
         print("\nSecond interrupt received -- exiting immediately (no checkpoint).")
@@ -349,7 +361,14 @@ if __name__ == "__main__":
         ckpt_dir = os.path.join("checkpoints", f"{config.env_id}_{now}")
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    def save_checkpoint(iteration, rng_key, model, opt_state, frames, hours):
+    def save_checkpoint(
+        iteration: int,
+        rng_key: jnp.ndarray,
+        model: Model,
+        opt_state: optax.OptState,
+        frames: int,
+        hours: float,
+    ) -> None:
         model_0, opt_state_0 = jax.tree_util.tree_map(lambda x: x[0], (model, opt_state))
         ckpt_path = os.path.join(ckpt_dir, f"{iteration:06d}.ckpt")
         print(f"Saving checkpoint: {os.path.relpath(ckpt_path)}")
