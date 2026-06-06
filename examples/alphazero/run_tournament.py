@@ -143,6 +143,11 @@ class GessCli(Cli):
         if stage == 0:
             self._src_label   = None
             self._stashed_dst = None
+        else:
+            # The chosen source square is recorded in the state, so derive its
+            # label from there. This keeps describe_action's "moved <src> -> ..."
+            # correct for model players, which never go through getActionId.
+            self._src_label = _gess_idx_to_label(source)
 
         src_r, src_c = source // _GESS_SIZE, source % _GESS_SIZE
 
