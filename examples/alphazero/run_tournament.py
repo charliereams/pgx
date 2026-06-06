@@ -37,6 +37,7 @@ from abc import ABC, abstractmethod
 # ANSI colors for terminal output.
 _GREEN = "\033[32m"
 _ORANGE = "\033[38;5;208m"  # 256-color orange for major game-event lines
+_GREY = "\033[38;5;245m"   # dim grey for verbose debug info (action weights, value)
 _RESET = "\033[0m"
 
 
@@ -470,7 +471,7 @@ class ModelAgent(Agent):
         self.name_prefix = name_prefix
         self.cli = cli
         self.mcts_config = mcts_config
-        self.mcts = partial(ModelAgent._run_mcts, forward, recurrent_fn, mcts_config, model) # Unjitted, for debugging.
+        self.mcts = partial(ModelAgent._run_mcts, forward, recurrent_fn, mcts_config, model, self.cli) # Unjitted, for debugging.
         self.mcts_jit = jax.jit(self.mcts)
 
     def getName(self):
@@ -478,17 +479,19 @@ class ModelAgent(Agent):
 
     def getAction(self, key, state):
         # Debug view into the policy evaluation: (slow)
-        # self.mcts(key, state, debug_domineering=..., debug_g_hex=...)
+        # self.mcts(key, state, print_debug_info=True)
         start_time = time.perf_counter()
-        policy_output = self.mcts_jit(key, state)
+        policy_output, value = self.mcts_jit(key, state)
         print(f"Thought for {time.perf_counter() - start_time:.1f} seconds.")
 
+        print(_GREY, end="")
         self.cli.display_action_weights(policy_output.action_weights)
+        print(f"value={value}{_RESET}")
 
         return policy_output.action
 
     @staticmethod  # Static for JITting.
-    def _run_mcts(forward, recurrent_fn, mcts_config, model, key, state, debug_domineering=False, debug_g_hex=False):
+    def _run_mcts(forward, recurrent_fn, mcts_config, model, cli, key, state, print_debug_info=False):
         key, subkey = jax.random.split(key)
         keys = jax.random.split(subkey, 1)  # Batch size must be 1
         key, subkey = jax.random.split(key)
@@ -498,26 +501,15 @@ class ModelAgent(Agent):
             model_params, model_state, state.observation, is_eval=True
         )
 
-        if debug_domineering or debug_g_hex:
+        if print_debug_info:
+            # Inspect the raw network prior (before MCTS): render the masked,
+            # softmaxed policy with the game-specific board view, plus the value.
             logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
             logits = logits - jnp.max(logits, axis=-1, keepdims=True)
-            if debug_domineering:
-                action_weights = jax.scipy.special.softmax(logits.reshape(8, 8))
-                print("\n".join(
-                       "".join(f"{100*w:5.2f}%  " for w in w_row)
-                         for w_row in action_weights
-                      ))
-            elif debug_g_hex:
-                action_weights = jax.scipy.special.softmax(logits.reshape(21, 10))
-                print("Action weights:")
-                print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
-                                 for tri_i, tri_row in enumerate(action_weights)]))
-            #elif debug_g_hex2:
-            #    action_weights = jax.scipy.special.softmax(logits.reshape(23, 11))
-            #    print("Action weights:")
-            #    print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
-            #                     for tri_i, tri_row in enumerate(action_weights)]))
-            print(f"value={value}")
+            action_weights = jax.scipy.special.softmax(logits, axis=-1)
+            print(_GREY, end="")
+            cli.display_action_weights(action_weights)
+            print(f"value={value}{_RESET}")
             return None
 
         root = mctx.RootFnOutput(
@@ -536,7 +528,7 @@ class ModelAgent(Agent):
             #qtransform=mctx.qtransform_completed_by_mix_value, # TODO: optimize? https://github.com/google-deepmind/mctx/blob/main/mctx/_src/policies.py
             gumbel_scale=0.0,
         )
-        return policy_output
+        return policy_output, value
 
 
 def load_from_checkpoint(path):
