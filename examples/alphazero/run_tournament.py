@@ -65,7 +65,7 @@ class TourneyConfig(BaseModel):
 
 
 class MctsConfig(NamedTuple):
-    num_simulations: int = 4096
+    num_simulations: int = 512
     max_num_considered_actions: int = 16
 
 
@@ -216,7 +216,7 @@ class GessCli(Cli):
         if self._stage == 0:
             return f"chose source {label}"
         else:
-            return f"moved {self._src_label} → {label}"
+            return f"moved {self._src_label} -> {label}"
 
     def display_action_weights(self, action_weights: jnp.ndarray) -> None:
         # Actions are flat indices into the full 20x20 board (row_idx*20 + col),
@@ -531,7 +531,7 @@ class ModelAgent(Agent):
 
     def getAction(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
         # Debug view into the policy evaluation: (slow)
-        # self.mcts(key, state, print_debug_info=True)
+        self.mcts(key, state, print_debug_info=True)
         start_time = time.perf_counter()
         policy_output, value = self.mcts_jit(key, state)
         print(f"Thought for {time.perf_counter() - start_time:.1f} seconds.")
@@ -568,7 +568,7 @@ class ModelAgent(Agent):
             logits = jnp.where(state.legal_action_mask, logits, jnp.finfo(logits.dtype).min)
             logits = logits - jnp.max(logits, axis=-1, keepdims=True)
             action_weights = jax.scipy.special.softmax(logits, axis=-1)
-            print(_GREY, end="")
+            print(f"{_GREY}First look:\n", end="")
             cli.display_action_weights(action_weights)
             print(f"value={value}{_RESET}")
             return None
