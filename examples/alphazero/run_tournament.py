@@ -509,7 +509,12 @@ class ModelAgent(Agent):
 
             reward = state.rewards[jnp.arange(state.rewards.shape[0]), current_player]
             value = jnp.where(state.terminated, 0.0, value)
-            discount = -1.0 * jnp.ones_like(value)
+            # +1 when the same player is still to move (a Gess turn is two actions
+            # -- pick source, then destination -- by one player), -1 when the
+            # opponent is now to move, 0 at terminal. Hardcoding -1 assumed strict
+            # alternation, which inverts the value across the intra-turn stage
+            # boundary and makes MCTS prefer sources from which every move loses.
+            discount = jnp.where(state.current_player == current_player, 1.0, -1.0)
             discount = jnp.where(state.terminated, 0.0, discount)
 
             recurrent_fn_output = mctx.RecurrentFnOutput(
