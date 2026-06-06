@@ -259,7 +259,7 @@ class DomineeringCli(Cli):
             jnp.zeros((8, 1), dtype=jnp.float32),
         ])
         print("\n".join(
-            "".join(f"{100*w:6.2f}%  " for w in w_row)
+            "".join(f"{100*w:6.2f}%  " if w != 0 else " " * 9 for w in w_row)
             for w_row in action_weights
         ))
         print("")
@@ -295,7 +295,7 @@ class GHexCli(Cli):
 
     def display_action_weights(self, action_weights):
         action_weights = action_weights.reshape(21, 10)
-        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" if w != 0 else " " * 7 for w in tri_row])
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
@@ -330,7 +330,7 @@ class GHex2Cli(Cli):
 
     def display_action_weights(self, action_weights):
         action_weights = action_weights.reshape(23, 11)
-        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" for w in tri_row])
+        print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" if w != 0 else " " * 7 for w in tri_row])
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
