@@ -18,9 +18,9 @@ import numpy as np
 import pytest
 
 import pgx
-from pgx.gess import Gess
+from pgx.gess import Gess, State
 from pgx._src.games.gess import (
-    BOARD_SIZE, N, MIN_IDX, MAX_IDX,
+    BOARD_SIZE, N, MIN_IDX, MAX_IDX, DRAW_NO_CAPTURE_TURNS,
     Game, GameState,
     _apply_move, _has_ring, _legal_source_mask, _legal_dest_mask,
     _make_init_board,
@@ -347,6 +347,141 @@ def test_mover_loses_when_both_final_rings_destroyed():
     assert int(x.winner) == 1, (
         "white should win: both final rings destroyed → mover (black) loses"
     )
+
+# ─── draw: 20 consecutive turns without a capture ────────────────────────────
+
+def _draw_test_board():
+    """Board where black can shuffle a piece back and forth without capturing.
+
+    Black ring at (5,5), white ring at (15,15) (so neither side is in danger),
+    plus a lone black piece at (10,5) with a north neighbour at (9,5) that can
+    slide into empty space, capturing nothing.
+    """
+    black_ring = [(BLACK, r, c) for r in range(4, 7) for c in range(4, 7)
+                  if not (r == 5 and c == 5)]
+    white_ring = [(WHITE, r, c) for r in range(14, 17) for c in range(14, 17)
+                  if not (r == 15 and c == 15)]
+    return make_board(*black_ring, *white_ring, (BLACK, 10, 5), (BLACK, 9, 5))
+
+
+def test_no_capture_counter_increments():
+    # A captureless move bumps the counter by one and does not draw early.
+    state = make_state(color=0, board=_draw_test_board(), stage=1,
+                       source=idx(10, 5))
+    x = game.step(state, jnp.int32(idx(9, 5)))   # slide north, captures nothing
+    assert int(x.no_capture_turns) == 1, "captureless turn should increment counter"
+    assert not bool(game.is_terminal(x))
+
+
+def test_draw_after_20_no_capture_turns():
+    # Counter sitting one below the threshold; a final captureless turn draws.
+    state = make_state(color=0, board=_draw_test_board(), stage=1,
+                       source=idx(10, 5))
+    state = state._replace(
+        no_capture_turns=jnp.int32(DRAW_NO_CAPTURE_TURNS - 1)
+    )
+    x = game.step(state, jnp.int32(idx(9, 5)))   # 20th captureless turn
+
+    assert int(x.no_capture_turns) == DRAW_NO_CAPTURE_TURNS
+    assert bool(game.is_terminal(x)), "game should be drawn after 20 captureless turns"
+    assert int(x.winner) == -1, "a draw has no winner"
+    assert game.rewards(x).tolist() == [0.0, 0.0], "a draw rewards both players 0"
+
+
+def test_capture_resets_no_capture_counter():
+    # Same setup, but a white stone in the destination footprint gets captured,
+    # which resets the counter and prevents the draw.
+    board = _draw_test_board().at[idx(8, 5)].set(WHITE)  # lands in dest footprint
+    state = make_state(color=0, board=board, stage=1, source=idx(10, 5))
+    state = state._replace(
+        no_capture_turns=jnp.int32(DRAW_NO_CAPTURE_TURNS - 1)
+    )
+    x = game.step(state, jnp.int32(idx(9, 5)))
+
+    assert int(x.no_capture_turns) == 0, "a capture resets the counter"
+    assert not bool(game.is_terminal(x)), "capturing avoids the draw even at the threshold"
+
+
+def test_self_capture_resets_no_capture_counter():
+    # A stone pushed onto the border ring is removed (a self-capture), which
+    # counts as a capture and resets the counter.
+    # Black piece at (1,5)+(2,5): moving source (2,5)→(1,5) shoves the (1,5)
+    # stone onto border row 0, removing it.
+    black_ring = [(BLACK, r, c) for r in range(4, 7) for c in range(4, 7)
+                  if not (r == 5 and c == 5)]
+    white_ring = [(WHITE, r, c) for r in range(14, 17) for c in range(14, 17)
+                  if not (r == 15 and c == 15)]
+    board = make_board(*black_ring, *white_ring, (BLACK, 2, 5), (BLACK, 1, 5))
+    state = make_state(color=0, board=board, stage=1, source=idx(2, 5))
+    state = state._replace(
+        no_capture_turns=jnp.int32(DRAW_NO_CAPTURE_TURNS - 1)
+    )
+    x = game.step(state, jnp.int32(idx(1, 5)))
+
+    assert int(x.no_capture_turns) == 0, "a self-capture resets the counter"
+    assert not bool(game.is_terminal(x))
+
+
+def test_win_on_threshold_turn_is_not_a_draw():
+    # Counter one below the draw threshold, but this move wins outright by
+    # destroying the opponent's only ring. The win destroys a ring (a capture),
+    # which resets the counter, so the result is a decisive win — never a draw.
+    # (Reuses the win setup: black keeps ring B, white's only ring is destroyed.)
+    black_ring_a = [(BLACK, r, c) for r in range(9, 12) for c in range(9, 12)
+                    if not (r == 10 and c == 10)]
+    black_ring_b = [(BLACK, r, c) for r in range(14, 17) for c in range(9, 12)
+                    if not (r == 15 and c == 10)]
+    white_ring   = [(WHITE, r, c) for r in range(9, 12) for c in range(13, 16)
+                    if not (r == 10 and c == 14)]
+    board = make_board(*black_ring_a, *black_ring_b, *white_ring,
+                       (BLACK, 10, 6), (BLACK, 10, 7))
+    state = make_state(color=0, board=board, stage=1, source=idx(10, 6))
+    state = state._replace(no_capture_turns=jnp.int32(DRAW_NO_CAPTURE_TURNS - 1))
+
+    x = game.step(state, jnp.int32(idx(10, 12)))
+
+    assert int(x.winner) == 0, "black wins outright on the would-be draw turn"
+    assert int(x.no_capture_turns) == 0, "the winning capture resets the counter"
+    assert bool(game.is_terminal(x))
+    assert game.rewards(x).tolist() == [1.0, -1.0], "decisive win, not a draw"
+
+
+def test_self_destruction_loss_on_threshold_turn_is_not_a_draw():
+    # Counter one below the threshold, but the mover destroys its OWN only ring
+    # this move (a self-capture) and loses. The self-capture resets the counter,
+    # so it is a decisive loss rather than a draw.
+    black_ring = [(BLACK, r, c) for r in range(4, 7) for c in range(4, 7)
+                  if not (r == 5 and c == 5)]
+    white_ring = [(WHITE, r, c) for r in range(14, 17) for c in range(14, 17)
+                  if not (r == 15 and c == 15)]
+    board = make_board(*black_ring, *white_ring, (BLACK, 10, 5), (BLACK, 9, 5))
+    state = make_state(color=0, board=board, stage=1, source=idx(10, 5))
+    state = state._replace(no_capture_turns=jnp.int32(DRAW_NO_CAPTURE_TURNS - 1))
+
+    # Black slams its moving piece onto its own ring at (5,5), wiping it out.
+    # Black has no other ring → mover loses; white (ring at (15,15)) wins.
+    x = game.step(state, jnp.int32(idx(5, 5)))
+
+    assert int(x.winner) == 1, "black destroyed its own only ring → white wins"
+    assert int(x.no_capture_turns) == 0, "the self-capture resets the counter"
+    assert bool(game.is_terminal(x))
+    assert game.rewards(x).tolist() == [-1.0, 1.0], "decisive loss, not a draw"
+
+
+def test_pgx_draw_terminates_with_zero_rewards():
+    # End-to-end through the pgx env: a draw sets terminated and zero rewards.
+    public = State(  # type: ignore
+        current_player=jnp.int32(0),
+        _x=make_state(color=0, board=_draw_test_board(), stage=1,
+                      source=idx(10, 5))._replace(
+            no_capture_turns=jnp.int32(DRAW_NO_CAPTURE_TURNS - 1)
+        ),
+    )
+    public = _step(public, jnp.int32(idx(9, 5)))
+    assert bool(public.terminated), "draw should terminate the pgx episode"
+    assert public.rewards.tolist() == [0.0, 0.0]
+    assert int(public._x.no_capture_turns) == DRAW_NO_CAPTURE_TURNS
+
 
 def test_mover_wins_when_own_nonfinal_ring_and_opp_final_ring_destroyed():
     # Black has TWO rings: ring A at (10,10) and ring B at (15,10).

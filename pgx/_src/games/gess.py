@@ -35,6 +35,10 @@ N          = BOARD_SIZE ** 2  # 400 flat cells
 MIN_IDX    = 1             # first playing-area row/col index
 MAX_IDX    = 18            # last  playing-area row/col index
 
+# The game is drawn once this many consecutive turns (full moves) pass without
+# a capture of any kind (opponent captures and self-captures both count).
+DRAW_NO_CAPTURE_TURNS = 20
+
 # Eight compass directions as a JAX array (8, 2) of (dr, dc) pairs.
 _DIRS_ARR: Array = jnp.int32([[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
 
@@ -54,6 +58,9 @@ class GameState(NamedTuple):
     stage:  Array = jnp.int32(0)            # 0=pick source  1=pick dest
     source: Array = jnp.int32(0)            # source centre chosen in stage 0
     winner: Array = jnp.int32(-1)           # -1=ongoing  0=black wins  1=white wins
+    # Consecutive completed turns with no capture; the game is drawn once it
+    # reaches DRAW_NO_CAPTURE_TURNS (see is_terminal).
+    no_capture_turns: Array = jnp.int32(0)
 
 
 # ─── Game class ──────────────────────────────────────────────────────────────
@@ -80,7 +87,10 @@ class Game:
         return jnp.where(state.stage == 0, src_mask, dst_mask)
 
     def is_terminal(self, state: GameState) -> Array:
-        return state.winner >= 0
+        # A win, or a draw from too many consecutive captureless turns. A win
+        # always destroys a ring (hence captures), so it resets no_capture_turns;
+        # the two conditions therefore never collide.
+        return (state.winner >= 0) | (state.no_capture_turns >= DRAW_NO_CAPTURE_TURNS)
 
     def rewards(self, state: GameState) -> Array:
         return jax.lax.select(
@@ -102,6 +112,14 @@ def _step_stage1(state: GameState, action: Array) -> GameState:
 
     new_board = _apply_move(state.board, state.source, action, mover_stone)
 
+    # A capture (opponent or self) always removes at least one stone, and a move
+    # never adds stones, so the total count strictly decreases iff something was
+    # captured. No capture leaves every stone merely relocated → count unchanged.
+    captured = jnp.sum(new_board != 0) < jnp.sum(state.board != 0)
+    no_capture_turns = jnp.where(
+        captured, jnp.int32(0), state.no_capture_turns + 1
+    )
+
     mover_has_ring = _has_ring(new_board, mover_stone)
     opp_has_ring   = _has_ring(new_board, opp_stone)
 
@@ -120,6 +138,7 @@ def _step_stage1(state: GameState, action: Array) -> GameState:
         board=new_board,
         stage=jnp.int32(0),
         winner=winner,
+        no_capture_turns=no_capture_turns,
     )
 
 
