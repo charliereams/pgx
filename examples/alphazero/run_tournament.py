@@ -79,10 +79,6 @@ class Cli(ABC):
         pass
 
     @abstractmethod
-    def load_model_based_agent(self, player_num, model_path):
-        pass
-
-    @abstractmethod
     def describe_action(self, action: jnp.ndarray) -> str:
         pass
 
@@ -250,10 +246,6 @@ class GessCli(Cli):
         print(header)
         print("")
 
-    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
-        config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
-
 
 class DomineeringCli(Cli):
     def get_action_id(self) -> int | None:
@@ -287,10 +279,6 @@ class DomineeringCli(Cli):
         ))
         print("")
 
-    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
-        config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
-
 
 class GHexCli(Cli):
     def get_action_id(self) -> int | None:
@@ -321,10 +309,6 @@ class GHexCli(Cli):
         print("\n".join([f"Tri {tri_i:2}: " + "  ".join([f"{100*w:6.2f}%" if w != 0 else " " * 7 for w in tri_row])
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
-
-    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
-        config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
 
 
 class GHex2Cli(Cli):
@@ -357,10 +341,6 @@ class GHex2Cli(Cli):
                          for tri_i, tri_row in enumerate(action_weights)]))
         print("")
 
-    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
-        config, model = load_from_checkpoint(model_path)
-        return ModelAgent(f"v{player_num}", MctsConfig(), config, model, self)
-
 
 class PigCli(Cli):
     def get_action_id(self) -> int | None:
@@ -386,9 +366,6 @@ class PigCli(Cli):
 
     def describe_action(self, action: jnp.ndarray) -> str:
         return "stopped" if action[0] == 0 else "rolled again"
-
-    def load_model_based_agent(self, player_num: int, model_path: str) -> "ModelAgent":
-        raise NotImplementedError("No trained Pig model available yet")
 
 
 #class HeckmeckCli(Cli):
@@ -626,6 +603,12 @@ _HECKMECK_ACTION_NAMES = [
     "Busted",
 ]
 
+
+def _load_model_based_agent(model_index: int, path: str, cli: Cli) -> ModelAgent:
+    config, model = load_from_checkpoint(path)
+    return ModelAgent(f"m{model_index}:ckpt={path}", MctsConfig(), config, model, cli)
+
+
 def build_agents(players: str, model_paths: list[str], cli: Cli) -> list[Agent]:
     """Parse a players spec like "random,me,model,model" into a list of agents.
 
@@ -648,7 +631,7 @@ def build_agents(players: str, model_paths: list[str], cli: Cli) -> list[Agent]:
                     "Pass models=<path1>[,<path2>,...]."
                 )
             path = model_paths[model_index % len(model_paths)]
-            agents.append(cli.load_model_based_agent(model_index, path))
+            agents.append(_load_model_based_agent(model_index, path, cli))
             model_index += 1
         else:
             raise ValueError(
