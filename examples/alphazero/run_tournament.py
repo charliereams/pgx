@@ -65,7 +65,7 @@ class TourneyConfig(BaseModel):
 
 
 class MctsConfig(NamedTuple):
-    num_simulations: int = 1024
+    num_simulations: int = 6144
     max_num_considered_actions: int = 16
 
 
