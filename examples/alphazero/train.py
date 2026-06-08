@@ -250,10 +250,14 @@ def train(
 
 
 @jax.pmap
-def evaluate(rng_key: jnp.ndarray, my_model: Model) -> jnp.ndarray:
+def evaluate(rng_key: jnp.ndarray, my_model: Model) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """A simplified evaluation by sampling. Only for debugging.
-    Please use MCTS and run tournaments for serious evaluation."""
-    my_player = 0
+    Please use MCTS and run tournaments for serious evaluation.
+
+    Returns (R, value_sse, value_n): the per-game outcome from the model's
+    perspective, and the summed squared error / count of the model's value-head
+    predictions against the eventual game outcome (see below).
+    """
     my_model_params, my_model_state = my_model
 
     key, subkey = jax.random.split(rng_key)
@@ -261,26 +265,52 @@ def evaluate(rng_key: jnp.ndarray, my_model: Model) -> jnp.ndarray:
     keys = jax.random.split(subkey, batch_size)
     state = jax.vmap(env.init)(keys)
 
+    # Seat-balance the eval: the model plays seat 0 in the first half of the
+    # batch and seat 1 in the second half, so any first-player advantage cancels
+    # out instead of biasing avg_R. Per-game seat assignment (shape (batch,)).
+    my_player = (jnp.arange(batch_size) >= batch_size // 2).astype(jnp.int32)
+
     def body_fn(
-        val: tuple[jnp.ndarray, pgx.State, jnp.ndarray]
-    ) -> tuple[jnp.ndarray, pgx.State, jnp.ndarray]:
-        key, state, R = val
-        (my_logits, _), _ = forward.apply(
+        val: tuple[jnp.ndarray, pgx.State, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+    ) -> tuple[jnp.ndarray, pgx.State, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        key, state, R, sum_v2, sum_sv, n = val
+        # Only score states that are still in play; already-finished games keep
+        # getting stepped (until every game terminates) but must not contribute.
+        alive = (~state.terminated).astype(jnp.float32)
+        (my_logits, my_value), _ = forward.apply(
             my_model_params, my_model_state, state.observation, is_eval=True
         )
         opp_logits, _ = baseline(state.observation)
-        is_my_turn = (state.current_player == my_player).reshape((-1, 1))
-        logits = jnp.where(is_my_turn, my_logits, opp_logits)
+        is_my_turn = state.current_player == my_player
+        logits = jnp.where(is_my_turn.reshape((-1, 1)), my_logits, opp_logits)
+
+        # The value head predicts the outcome for the player to move. The true
+        # target is that player's final reward = s * R, where R is my_player's
+        # final reward and s = +1 on the model's turns, -1 on the opponent's
+        # (the game is zero-sum). R is unknown until the game ends, so instead of
+        # the squared error we accumulate its expansion
+        #   (v - s*R)^2 = v^2 - 2*R*(s*v) + R^2,
+        # combined with R after the loop. (s^2 = 1, so the last term is just R^2.)
+        s = jnp.where(is_my_turn, 1.0, -1.0)
+        sum_v2 = sum_v2 + alive * my_value**2
+        sum_sv = sum_sv + alive * s * my_value
+        n = n + alive
+
         key, subkey = jax.random.split(key)
         action = jax.random.categorical(subkey, logits, axis=-1)
         state = jax.vmap(env.step)(state, action)
         R = R + state.rewards[jnp.arange(batch_size), my_player]
-        return (key, state, R)
+        return (key, state, R, sum_v2, sum_sv, n)
 
-    _, _, R = jax.lax.while_loop(
-        lambda x: ~(x[1].terminated.all()), body_fn, (key, state, jnp.zeros(batch_size))
+    zeros = jnp.zeros(batch_size)
+    _, _, R, sum_v2, sum_sv, n = jax.lax.while_loop(
+        lambda x: ~(x[1].terminated.all()),
+        body_fn,
+        (key, state, zeros, zeros, zeros, zeros),
     )
-    return R
+    # Per-game sum of squared value errors, recombined with the final outcome R.
+    sse = sum_v2 - 2.0 * R * sum_sv + n * R**2
+    return R, sse.sum(), n.sum()
 
 
 # Set by the SIGINT handler to request a clean shutdown: the training loop
@@ -342,7 +372,12 @@ if __name__ == "__main__":
         iteration = ckpt["iteration"]
         frames = ckpt["frames"]
         hours = ckpt["hours"]
-        rng_key = ckpt["rng_key"]
+        if config.reseed_on_resume:
+            # Keep rng_key = PRNGKey(config.seed) (set above) so self-play
+            # generates a fresh game stream rather than replaying the checkpoint's.
+            print(f"Reseeding RNG from seed={config.seed} (fresh self-play games)")
+        else:
+            rng_key = ckpt["rng_key"]
         print(f"Resumed at iteration {iteration} ({frames} frames, {hours:.2f} hours)")
 
     # Replicate to all devices: add a leading device axis (size num_devices)
@@ -396,13 +431,17 @@ if __name__ == "__main__":
             # Evaluation
             rng_key, subkey = jax.random.split(rng_key)
             keys = jax.random.split(subkey, num_devices)
-            R = evaluate(keys, model)
+            R, value_sse, value_n = evaluate(keys, model)
+            # value_sse / value_n are summed per device; aggregate across devices
+            # by re-dividing the totals (avoids weighting devices unequally).
+            value_mse = (value_sse.sum() / value_n.sum()).item()
             log.update(
                 {
                     f"eval/vs_baseline/avg_R": R.mean().item(),
                     f"eval/vs_baseline/win_rate": ((R == 1).sum() / R.size).item(),
                     f"eval/vs_baseline/draw_rate": ((R == 0).sum() / R.size).item(),
                     f"eval/vs_baseline/lose_rate": ((R == -1).sum() / R.size).item(),
+                    f"eval/vs_baseline/value_mse": value_mse,
                 }
             )
 

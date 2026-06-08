@@ -14,6 +14,11 @@ class Config(BaseModel):
     max_num_iters: int = 400
     # path to a .ckpt file to resume training from (empty = start from scratch)
     resume_from: str = ""
+    # When resuming, by default the RNG key is restored from the checkpoint so
+    # self-play deterministically continues the same game stream. Set this True
+    # to instead reseed the RNG from `seed`, producing fresh self-play games
+    # (model/opt_state/iteration/frames are still restored as usual).
+    reseed_on_resume: bool = False
     # wandb run id to resume logging into. If empty when resuming, the id stored
     # in the checkpoint (if any) is used so the original run continues.
     wandb_run_id: str = ""
