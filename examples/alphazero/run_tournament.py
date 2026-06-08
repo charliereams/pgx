@@ -683,7 +683,7 @@ if __name__ == "__main__":
                 return state._x.winner
 
             agent = agents[state.current_player[0]]
-            print(f"{_ORANGE}Turn {turn_num}: {agent.get_name()} to play because current_player={state.current_player[0]}...{_RESET}", flush=True)
+            print(f"{_ORANGE}Game {game_num}, turn {turn_num}, player={state.current_player[0]}: {agent.get_name()} to select action...{_RESET}", flush=True)
             action = agent.get_action(key, state)
             print(f"{agent.get_name()} {_GREEN}{cli.describe_action(action)}{_RESET}\n")
 
@@ -700,7 +700,7 @@ if __name__ == "__main__":
         game_agents = agents[rotation_pos:] + agents[:rotation_pos]
         print(f"{_ORANGE}Game {game_num} of {tourney_config.games}: {" vs ".join([agent.get_name() for agent in game_agents])}{_RESET}")
 
-        winner = run_game(game_num, game_agents, 0)  # TODO: more interesting start depths
+        winner = run_game(game_num, game_agents, 0 if game_num < 2 else 1)  # TODO: more interesting start depths
         for w in range(0, len(agents)):
             if (winner + rotation_pos) % len(agents) == w:
                 wins[w] += 1
