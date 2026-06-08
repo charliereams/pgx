@@ -512,8 +512,13 @@ class ModelAgent(Agent):
         return f"Model[{self.name_prefix}:sims={self.mcts_config.num_simulations}]"
 
     def get_action(self, key: jnp.ndarray, state: pgx.State) -> jnp.ndarray:
+        if int(state.legal_action_mask.sum()) == 1:
+            print("[short-circuit] Only one legal move; skipping search")
+            return jnp.argmax(state.legal_action_mask)   # the sole legal action
+
         # Debug view into the policy evaluation: (slow)
         self.mcts(key, state, print_debug_info=True)
+
         start_time = time.perf_counter()
         policy_output, value = self.mcts_jit(key, state)
         print(f"Thought for {time.perf_counter() - start_time:.1f} seconds.")
