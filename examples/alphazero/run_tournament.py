@@ -25,6 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 import mctx
 import pgx
+import pgx.gess
 import pgx.heckmeck as Heckmeck
 from omegaconf import OmegaConf
 from pgx.g_hex import black
@@ -154,7 +155,9 @@ class GessCli(Cli):
         # never be occupied, so we omit it and render only the inner 18x18 area.
         inner = range(1, _GESS_SIZE - 1)
         header = "     " + " ".join(_GESS_COLS[1:_GESS_SIZE - 1])
-        print(header)
+        black_stones = int((board == pgx.gess.BLACK).sum())
+        white_stones = int((board == pgx.gess.WHITE).sum())
+        print(f"{header}   Stones[Black={black_stones} White={white_stones}]")
         # Row index 1 = label 19 (top); row index 18 = label 2 (bottom).
         for r in inner:
             row_label = str(_GESS_SIZE - r).rjust(3)

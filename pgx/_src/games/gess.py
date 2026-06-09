@@ -35,6 +35,11 @@ N          = BOARD_SIZE ** 2  # 400 flat cells
 MIN_IDX    = 1             # first playing-area row/col index
 MAX_IDX    = 18            # last  playing-area row/col index
 
+# Board cell values (see header note above).
+EMPTY = 0                  # empty cell
+BLACK = 1                  # black stone (player 0, moves first)
+WHITE = 2                  # white stone (player 1)
+
 # The game is drawn once this many consecutive turns (full moves) pass without
 # a capture of any kind (opponent captures and self-captures both count).
 DRAW_NO_CAPTURE_TURNS = 20

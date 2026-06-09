@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 
 import pgx.core as core
-from pgx._src.games.gess import Game, GameState, N, BOARD_SIZE, MIN_IDX, MAX_IDX
+from pgx._src.games.gess import Game, GameState, N, BOARD_SIZE, MIN_IDX, MAX_IDX, EMPTY, BLACK, WHITE
 from pgx._src.struct import dataclass
 from pgx._src.types import Array, PRNGKey
 
