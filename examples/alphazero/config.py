@@ -5,7 +5,7 @@
 # and so checkpoints pickle/unpickle against a stable module path (config.Config).
 
 import pgx
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, PrivateAttr, model_validator
 
 
 class Config(BaseModel):
@@ -35,12 +35,26 @@ class Config(BaseModel):
     # selfplay params
     selfplay_batch_size: int = 1024
     num_simulations: int = 32
+    # Optional curriculum for MCTS search depth: a comma-separated list of
+    # "<num_simulations>@<from_iteration>" entries, e.g. "8@0,16@50,32@150,64@250".
+    # At each iteration the trainer uses the num_simulations of the latest entry
+    # whose from_iteration <= iteration (falling back to `num_simulations` for any
+    # iteration before the first entry). Empty = use the constant `num_simulations`
+    # for the whole run. A cheap shallow search early (when the random-ish net
+    # can't exploit deep search) and a deeper one late is more compute-efficient.
+    # Changing the active value triggers one XLA recompile of the self-play step
+    # (cheap, only a handful of times over a run).
+    sim_schedule: str = ""
     max_num_steps: int = 256
     # training params
     training_batch_size: int = 4096
     learning_rate: float = 0.001
     # eval params
     eval_interval: int = 5
+
+    # Parsed `sim_schedule`, as a list of (from_iteration, num_simulations) sorted
+    # ascending by from_iteration. Populated by the validator below.
+    _sim_schedule: list[tuple[int, int]] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="after")
     def _check_attention_layers(self):
@@ -50,6 +64,49 @@ class Config(BaseModel):
                 f"num_layers ({self.num_layers})."
             )
         return self
+
+    @model_validator(mode="after")
+    def _parse_sim_schedule(self):
+        entries: list[tuple[int, int]] = []
+        for raw in self.sim_schedule.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            sims_str, sep, iter_str = raw.partition("@")
+            if not sep:
+                raise ValueError(
+                    f"sim_schedule entry {raw!r} must be of the form "
+                    "'<num_simulations>@<from_iteration>', e.g. '8@0'."
+                )
+            try:
+                sims, from_iter = int(sims_str), int(iter_str)
+            except ValueError:
+                raise ValueError(
+                    f"sim_schedule entry {raw!r} has non-integer parts; expected "
+                    "'<num_simulations>@<from_iteration>', e.g. '16@50'."
+                )
+            if sims <= 0 or from_iter < 0:
+                raise ValueError(
+                    f"sim_schedule entry {raw!r}: num_simulations must be > 0 and "
+                    "from_iteration must be >= 0."
+                )
+            entries.append((from_iter, sims))
+        entries.sort()
+        self._sim_schedule = entries
+        return self
+
+    def num_simulations_at(self, iteration: int) -> int:
+        """Active MCTS simulation count for `iteration` under `sim_schedule`.
+
+        Falls back to the constant `num_simulations` when no schedule is set (or
+        for iterations before the schedule's first entry)."""
+        sims = self.num_simulations
+        for from_iter, s in self._sim_schedule:
+            if from_iter <= iteration:
+                sims = s
+            else:
+                break
+        return sims
 
     class Config:
         extra = "forbid"

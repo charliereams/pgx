@@ -134,8 +134,12 @@ class SelfplayOutput(NamedTuple):
     discount: jnp.ndarray
 
 
-@jax.pmap
-def selfplay(model: Model, rng_key: jnp.ndarray) -> SelfplayOutput:
+# num_simulations is a static (broadcast, not mapped) argument so it can be
+# varied across iterations via config.sim_schedule. Each distinct value triggers
+# one XLA recompile of this self-play step; the schedule changes it only a
+# handful of times over a run.
+@partial(jax.pmap, static_broadcasted_argnums=(2,))
+def selfplay(model: Model, rng_key: jnp.ndarray, num_simulations: int) -> SelfplayOutput:
     model_params, model_state = model
     batch_size = config.selfplay_batch_size // num_devices
 
@@ -153,7 +157,7 @@ def selfplay(model: Model, rng_key: jnp.ndarray) -> SelfplayOutput:
             rng_key=key1,
             root=root,
             recurrent_fn=recurrent_fn,
-            num_simulations=config.num_simulations,
+            num_simulations=num_simulations,
             invalid_actions=~state.legal_action_mask,
             qtransform=mctx.qtransform_completed_by_mix_value,
             gumbel_scale=1.0,  # 0.0 for perfect information games
@@ -459,9 +463,10 @@ if __name__ == "__main__":
         st = time.time()
 
         # Selfplay
+        num_simulations = config.num_simulations_at(iteration)
         rng_key, subkey = jax.random.split(rng_key)
         keys = jax.random.split(subkey, num_devices)
-        data: SelfplayOutput = selfplay(model, keys)
+        data: SelfplayOutput = selfplay(model, keys, num_simulations)
         # Fraction of game slots that reached a terminal state within
         # max_num_steps; the rest hit the step limit and were truncated.
         terminate_rate = data.terminated.any(axis=1).mean().item()
@@ -501,6 +506,7 @@ if __name__ == "__main__":
                 "train/policy_loss": policy_loss,
                 "train/value_loss": value_loss,
                 "train/terminate_rate": terminate_rate,
+                "selfplay/num_simulations": num_simulations,
                 "hours": hours,
                 "frames": frames,
             }
